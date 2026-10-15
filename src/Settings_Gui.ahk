@@ -65,8 +65,11 @@ Class Settings_Gui {
             ProgramLog.Add("Settings closed; restart required=" This.NeedRestart)
             SetTimer(This.updateUiTimer, 0)
             This.S_Gui.Destroy()
-            if (This.NeedRestart)
+            if (This.NeedRestart) {
+                SetTimer(This.Save_Settings_Delay_Timer, 0)
+                This.SaveJsonToFile()
                 Reload()
+            }
         }
 
         This.S_Gui.Show(Format("w{} h{} Center", This.guiWidth, This.guiHeight))
@@ -103,7 +106,7 @@ Class Settings_Gui {
         This.contentGap := 16
 
         This.guiWidth := 700
-        This.guiHeight := 160 + (This.profilesGroups.Length * 42) ; Dynamic height size! Depends on buttons count
+        This.guiHeight := 192 + (This.profilesGroups.Length * 42) ; Dynamic height size! Depends on buttons count
 
         This.btnH := 32
         This.objH := 20
@@ -148,7 +151,11 @@ Class Settings_Gui {
         btnRename := This.Sidebar.Add("Button", Format("xp+{} yp w{} h{}", This.sidebar3BtnW + This.baseGrid + 1, This.sidebar3BtnW, This.btnH), "Rename")
         btnDelete := This.Sidebar.Add("Button", Format("xp+{} yp w{} h{}", This.sidebar3BtnW + This.baseGrid + 1, This.sidebar3BtnW, This.btnH), "Delete")
 
-        This.Sidebar.Add("Text", Format("xs yp+{}", This.btnH + This.contentGap), "Select a settings group")
+        This.Sidebar.Add("Text", Format("xs yp+{}", This.btnH + This.contentGap), "Profile hotkey:")
+        profileHotkey := This.Sidebar.Add("Edit", Format("xs+104 yp-{} w{}", This.editOffset, This.sidebarInnerW - 104) " vProfileActivationHotkey", This.ProfileActivationHotkey)
+        profileHotkey.OnEvent("Change", (obj, *) => This.ProfileActivationHotkeyChanged(obj))
+
+        This.Sidebar.Add("Text", Format("xs yp+{}", This.xlGap + This.editOffset), "Select a settings group")
 
         for index, btn_text in This.profilesGroups {
             if index == 1 {
@@ -175,6 +182,12 @@ Class Settings_Gui {
 
         ; Create map group which holds the GUI objects for the settings groups
         This.MainFrame.Group := Map()
+    }
+
+    ProfileActivationHotkeyChanged(obj, *) {
+        This.ProfileActivationHotkey := obj.Value
+        This.NeedRestart := 1
+        SetTimer(This.Save_Settings_Delay_Timer, -200)
     }
 
     SettingsGroup_Handler(Obj) {
@@ -902,6 +915,9 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Shift Thumbnails on Login Screen:")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShiftThumbsForLoginScreen Checked" This.ShiftThumbsForLoginScreen, "On/Off")
 
+        arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Shift Logged-In Thumbnails (Unsaved):")
+        arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShiftThumbsForLoggedInCharacters Checked" This.ShiftThumbsForLoggedInCharacters, "On/Off")
+
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Enable Thumbnail Collision Avoidance:")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShiftThumbsCollisionCheck Checked" This.ShiftThumbsCollisionCheck, "On/Off")
 
@@ -935,6 +951,7 @@ Class Settings_Gui {
         This.MainFrame["ThumbnailSnap_Distance"].OnEvent("Change", (obj, *) => EventHandler(obj))
         This.MainFrame["HideThumbForActiveWin"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbsForLoginScreen"].OnEvent("Click", (obj, *) => EventHandler(obj))
+        This.MainFrame["ShiftThumbsForLoggedInCharacters"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbsCollisionCheck"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbsDirection"].OnEvent("Change", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbHorizontalStep"].OnEvent("Change", (obj, *) => EventHandler(obj))
@@ -992,6 +1009,9 @@ Class Settings_Gui {
             }
             else if (obj.name = "ShiftThumbsForLoginScreen") {
                 This.ShiftThumbsForLoginScreen := obj.value
+            }
+            else if (obj.name = "ShiftThumbsForLoggedInCharacters") {
+                This.ShiftThumbsForLoggedInCharacters := obj.value
             }
             else if (obj.name = "ShiftThumbsCollisionCheck") {
                 This.ShiftThumbsCollisionCheck := obj.value
@@ -1259,6 +1279,9 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Track Current System (Local Chat):")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vsystemTrackingEnabled", "On/Off")
 
+        arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Color System Names by System:")
+        arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vsystemColorsEnabled Checked" This.systemColorsEnabled, "On/Off")
+
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Chat Logs (blank = auto):")
         arr.Push This.MainFrame.Add("Button", Format("xp+{} yp-{} w{} h{}", This.offsetX - 60 - This.baseGrid, 5, 60, 26) " vselectChatLogsDirectory", "Select")
         arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp+{} w{}", 60 + This.baseGrid, 1, This.editW) " vchatLogsDirectory")
@@ -1302,6 +1325,7 @@ Class Settings_Gui {
 
         This.MainFrame["gameLogsMonitoringEnabled"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["systemTrackingEnabled"].OnEvent("Click", (obj, *) => EventHandler(obj))
+        This.MainFrame["systemColorsEnabled"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["chatLogsDirectory"].OnEvent("Change", (obj, *) => EventHandler(obj))
         This.MainFrame["selectChatLogsDirectory"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["selectGameLogsDirectory"].OnEvent("Click", (obj, *) => EventHandler(obj))
@@ -1323,6 +1347,11 @@ Class Settings_Gui {
                 This.gameLogsMonitoringEnabled := obj.value
             else if obj.name = "systemTrackingEnabled"
                 This.systemTrackingEnabled := obj.value
+            else if obj.name = "systemColorsEnabled" {
+                This.systemColorsEnabled := obj.value
+                SetTimer(This.Save_Settings_Delay_Timer, -200)
+                return ; Color changes apply immediately and do not require a restart.
+            }
             else if obj.name = "chatLogsDirectory"
                 This.chatLogsDirectory := obj.value
             else if obj.name = "selectChatLogsDirectory" {
@@ -2085,6 +2114,7 @@ Class Settings_Gui {
             This.NeedRestart := 1
         
         This.LastUsedProfile := This.Sidebar["SelectedProfile"].Text
+        This.Sidebar["ProfileActivationHotkey"].Value := This.ProfileActivationHotkey
         This.ProfileOverride()
         This.Refresh_ControlValues()
         This.UpdateOvrText()
@@ -2245,6 +2275,7 @@ Class Settings_Gui {
         This.MainFrame["PreserveCharNameOnLogout"].value := This.PreserveCharNameOnLogout
         This.MainFrame["HideThumbForActiveWin"].value := This.HideThumbForActiveWin
         This.MainFrame["ShiftThumbsForLoginScreen"].value := This.ShiftThumbsForLoginScreen
+        This.MainFrame["ShiftThumbsForLoggedInCharacters"].value := This.ShiftThumbsForLoggedInCharacters
         This.MainFrame["ShiftThumbsCollisionCheck"].value := This.ShiftThumbsCollisionCheck
         current_index := This.directions.Get(This.ShiftThumbsDirection, 8)
         This.MainFrame["ShiftThumbsDirection"].Choose(current_index)
@@ -2268,6 +2299,7 @@ Class Settings_Gui {
         ; Game Logs Monitoring
         This.MainFrame["gameLogsMonitoringEnabled"].value := This.gameLogsMonitoringEnabled
         This.MainFrame["systemTrackingEnabled"].Value := This.systemTrackingEnabled
+        This.MainFrame["systemColorsEnabled"].Value := This.systemColorsEnabled
         This.MainFrame["chatLogsDirectory"].Value := This.chatLogsDirectory
         This.MainFrame["monitoringInterval"].value := This.monitoringInterval
         This.MainFrame["gameLogsDirectory"].value := This.gameLogsDirectory

@@ -8,6 +8,7 @@
     "DebugMode": 0,
     "_Profiles": {
         "Default": {
+            "ActivationHotkey": "",
             "Client Settings": {
                 "MinimizeInactiveClients": 0,
                 "AlwaysMaximize": 0,
@@ -39,6 +40,7 @@
                 "ThumbnailSnap_Distance": 20,
                 "HideThumbForActiveWin": 0,
                 "ShiftThumbsForLoginScreen": 1,
+                "ShiftThumbsForLoggedInCharacters": 1,
                 "ShiftThumbsCollisionCheck": 1,
                 "ShiftThumbsDirection": 1,
                 "ShiftThumbHorizontalStep": 0,
@@ -186,6 +188,7 @@
             "Game Logs Monitoring": {
                 "gameLogsMonitoringEnabled": 0,
                 "systemTrackingEnabled": 0,
+                "systemColorsEnabled": 0,
                 "chatLogsDirectory": "",
                 "monitoringInterval": 1000,
                 "gameLogsDirectory": "",

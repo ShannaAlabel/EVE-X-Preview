@@ -172,6 +172,7 @@ AssertThrows(callback, expectedText := "", message := "Expected callback to thro
 #Include "Combat_Events_Test.ahk"
 #Include "NPC_Database_Test.ahk"
 #Include "System_Tracking_Test.ahk"
+#Include "System_Colors_Test.ahk"
 #Include "DPS_Monitoring_Test.ahk"
 #Include "Game_Log_Discovery_Test.ahk"
 #Include "Thumbnail_Drag_Test.ahk"
@@ -179,6 +180,7 @@ AssertThrows(callback, expectedText := "", message := "Expected callback to thro
 #Include "Update_Checker_Test.ahk"
 #Include "Group_Activation_Test.ahk"
 #Include "Preview_Diagnostics_Test.ahk"
+#Include "Thumbnail_Shift_Test.ahk"
 #Include "Profile_Switch_Test.ahk"
 
 TestRunner.RunAll()

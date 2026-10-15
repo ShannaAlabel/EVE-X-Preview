@@ -38,6 +38,7 @@ Class Main_Class extends ThumbWindow {
     ;### Predifining Arrays and Maps #########
     EventHooks := Map() 
     ThumbWindows := {}
+    systemColors := SystemColorManager()
     ThumbHwnd_EvEHwnd := Map()
     previewQueue := PreviewStartupQueue()
     livePreviewsPaused := false
@@ -65,6 +66,7 @@ Class Main_Class extends ThumbWindow {
 
         This._JSON := Load_JSON()
         This.default_JSON := JSON.Load(default_JSON)
+        This.runningProfile := This.LastUsedProfile
        
         This.ProfileOverride()
         This.TrayMenu()
@@ -249,6 +251,8 @@ Class Main_Class extends ThumbWindow {
                 This.RegisterHotkeyWithLanguageRetry(This.Exit_Program_Hotkey, (*) => ExitApp(), "S1", "Exit program")
         }
 
+        This.RegisterProfileHotkeys()
+
         ; ##############################
         ; Global vars and funcs/timers registration
 
@@ -332,6 +336,58 @@ Class Main_Class extends ThumbWindow {
         This.startSystemTracking()
 
         return This
+    }
+
+    RegisterProfileHotkeys() {
+        ; All profiles remain reachable, even without an EVE window. Avoid firing while editing settings.
+        This.profileHotkeyCondition := (*) => !WinActive("EVE-X-Preview - Settings")
+        HotIf(This.profileHotkeyCondition)
+        This.profileHotkeys := Map()
+        try {
+            for profileName, profile in This.Profiles {
+                keyName := Trim(profile.Get("ActivationHotkey", ""), "`r`n `t")
+                if keyName = ""
+                    continue
+                ; Ask AHK so equivalent spellings (e.g. ^!F1 and !^f1) cannot replace a callback.
+                exists := false
+                try {
+                    Hotkey(keyName, "On")
+                    exists := true
+                } catch TargetError {
+                    ; No hotkey with this key combination and condition has been registered.
+                } catch ValueError {
+                    ; Let the registration below handle invalid names and keyboard-layout retry.
+                }
+                if exists {
+                    ProgramLog.Add("Duplicate profile hotkey skipped; profile=" profileName "; key=" keyName)
+                    continue
+                }
+                callback := ObjBindMethod(This, "ActivateProfileFromHotkey", profileName)
+                if This.TryRegisterProfileHotkey(keyName, callback, profileName)
+                    This.profileHotkeys[keyName] := profileName
+            }
+        } finally {
+            HotIf()
+        }
+    }
+
+    TryRegisterProfileHotkey(keyName, callback, profileName) {
+        try {
+            if This.SwitchLangOnErr
+                return This.RegisterHotkeyWithLanguageRetry(keyName, callback, "P1", "Activate profile " profileName)
+            Hotkey(keyName, callback, "P1")
+            return true
+        } catch Error as err {
+            ProgramLog.Error(err, "Profile hotkey registration; profile=" profileName "; key=" keyName)
+            return false
+        }
+    }
+
+    ActivateProfileFromHotkey(profileName, *) {
+        ; Holding a shortcut through reload must not repeatedly restart the active profile.
+        if profileName = This.runningProfile
+            return false
+        return This.ActivateProfile(profileName, "Hotkey")
     }
 
     RegisterHotkeyWithLanguageRetry(keyName, callback, options, context) {
@@ -548,6 +604,9 @@ Class Main_Class extends ThumbWindow {
                 }
                 if !WinList.Length
                     This.allLoginClosed := true
+                else if This.ShiftThumbsForLoggedInCharacters
+                    ; Keep sequential shifting advancing while logged-in clients remain.
+                    This.allLoginClosed := false
                 else {
                     for EVEHWND in This.ThumbWindows.OwnProps() {
                         if This.ThumbWindows.%EVEHWND%["Window"].Title == "EVE" {
@@ -1577,6 +1636,8 @@ Class Main_Class extends ThumbWindow {
         }
         else {
             This.SetThumbnailText[Win_Hwnd] := Win_Title  ; No saved position, still set the label
+            if WinExist(This.EVEExe " ahk_id " Win_Hwnd)
+                This.ShiftThumbs(Win_Hwnd, true)
         }
 
         This.ThumbClickThrough(This.ThumbWindows.%Win_Hwnd%) ; If click through active, enable for new thumbnails
@@ -1601,9 +1662,10 @@ Class Main_Class extends ThumbWindow {
         This.ThumbWindows.DeleteProp(hwnd)
     }
 
-    ; if ShiftThumbsForLoginScreen enabled we try to shift thumbnail using user settings
-    ShiftThumbs(Win_Hwnd) {
-        if !This.ShiftThumbsForLoginScreen || This.skipShiftThumbs
+    ; Both shifting options share direction, spacing, collision checks and monitor bounds.
+    ShiftThumbs(Win_Hwnd, loggedInCharacter := false) {
+        enabled := loggedInCharacter ? This.ShiftThumbsForLoggedInCharacters : This.ShiftThumbsForLoginScreen
+        if !enabled || This.skipShiftThumbs
             return
 
         static nextPosX := "", nextPosY := ""
@@ -1639,7 +1701,7 @@ Class Main_Class extends ThumbWindow {
             nextPosY := startY
             Collision := This.CheckCollisions(nextPosX, nextPosY, This.ThumbnailStartLocation["width"], This.ThumbnailStartLocation["height"], This.ThumbWindows.%Win_Hwnd%["Window"].Hwnd)
         }
-        ; on first use, or if all login windows are closed, we reset the position to start from beginning
+        ; Reset after all clients close (or all login screens close when only their shifting is enabled).
         else if This.allLoginClosed || nextPosX = "" {
             nextPosX := startX
             nextPosY := startY

@@ -1,3 +1,16 @@
+# v1.6.1.3
+
+### Added
+* Profile activation hotkeys beside the profile selector in Settings. Each profile can have its own shortcut, available from every active profile even without EVE running; activation uses the same save-and-reload action as the tray Profiles menu.
+* Shift Logged-In Thumbnails (Unsaved) in Thumbnails Behavior, beside login-screen shifting and enabled by default. Already logged-in characters without a saved thumbnail position use the shared shift direction, spacing, collision avoidance and monitor bounds on startup; saved positions keep priority and the two shifting options can be toggled independently.
+* Optional colors for current-system names: characters in the same system share a color, while different occupied systems use different colors. Enable Color System Names by System in Game Logs Monitoring; disabled by default and changes apply immediately.
+
+### Improved
+* Settings are saved before a required restart. Profile copies use independent settings and start with an empty activation shortcut; renaming retains current edits and the profile shortcut.
+
+### Fixed
+* Local-chat discovery workers can replace result and progress snapshots while the UI reads them, avoiding sharing failures that could leave some characters undiscovered.
+
 # v1.6.1
 
 ### Improved

@@ -125,6 +125,8 @@ The left panel contains the profile selector and profile management buttons:
 * Rename profile
 * Delete profile
 
+Select a profile and enter its **Profile hotkey** using AutoHotkey syntax (for example, `^!F1` for Ctrl+Alt+F1). Close Settings to apply. Each profile has its own shortcut, independent of settings-group overrides, and all configured profile shortcuts work even when EVE is closed. Pressing one activates that profile through the same save-and-reload action as the tray Profiles menu. Profile shortcuts pause while Settings is focused and follow Suspend Hotkeys. Leave the field empty to remove a shortcut, and use a different key combination for each profile and other action. Copying a profile's settings leaves the new profile's shortcut empty; renaming preserves it.
+
 It also contains buttons for settings groups. When you select a group, the main window shows the settings for that group.
 
 ### Hotkey Groups
@@ -183,6 +185,7 @@ This group controls thumbnail placement, movement, and visibility behavior.
 * Thumbnail Snap Distance (px): snap threshold in pixels.
 * Hide Thumbnail for Active Window: hides the thumbnail of the active client.
 * Shift Thumbnails on Login Screen: offsets new thumbnails from the default position.
+* Shift Logged-In Thumbnails (Unsaved): enabled by default; offsets new thumbnails for already logged-in characters without a saved position, using the same shift direction, steps, collision avoidance and monitor bounds as login-screen thumbnails. Saved positions take priority; this option works independently of login-screen shifting.
 * Enable Thumbnail Collision Avoidance: prevents thumbnails from overlapping while shifting.
 * Thumbnail Shift Direction: stacking direction for new thumbnails.
 * Thumbnail Shift Horizontal Step (px): horizontal shift step; `0` uses thumbnail width.
@@ -247,6 +250,7 @@ Performance impact increases with the number of characters tracked at the same t
 
 * Game Logs Monitoring Enabled: turns combat/event log monitoring on or off.
 * Track Current System (Local Chat): follows Local chat system-change announcements and keeps the current system at the bottom of the thumbnail, with event text above it. Defaults to off and works independently of combat monitoring and focused-window event suppression. It shares the monitoring interval and selected-character filter; the thumbnail text overlay must be enabled to display it.
+* Color System Names by System: gives characters in the same system the same system-name color, with distinct colors for different occupied systems. Requires current-system tracking and defaults to off. Changes apply immediately. Colors remain stable while a system is occupied; unused colors can be recycled during travel, and assignments are remembered for the current application session.
 * Chat Logs (blank = auto): optionally select your Chatlogs folder. Automatic detection checks beside the configured Gamelogs folder, then Documents/logs/Chatlogs and Documents/EVE/logs/Chatlogs. The newest Local session is matched by its Listener header, including when tracking starts after login. Changes apply when settings close.
 * Game Logs (blank = auto): optionally select your Gamelogs folder. Like Chat Logs, a blank field detects the sibling of the other configured log folder, then Documents/logs/Gamelogs and Documents/EVE/logs/Gamelogs. Automatic paths are resolved without filling in either settings field.
 * Monitoring Interval (ms): polling interval.

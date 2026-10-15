@@ -11,7 +11,10 @@ class LocalChatMonitor {
         if this.busy
             return
         this.busy := true
-        try this.PollReaders(active)
+        try {
+            this.PollReaders(active)
+            this.owner.RefreshThumbnailSystemColors()
+        }
         finally this.busy := false
     }
 

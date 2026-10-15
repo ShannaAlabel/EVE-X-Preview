@@ -53,6 +53,7 @@ Class ThumbWindow extends Propertys {
             if (This.CustomColorsGet[Win_Title]["Char"] != "" && This.CustomColorsGet[Win_Title]["Text"] != "") {
                 try {
                     ThumbObj["TextOverlay"].SetFont("s" This.ThumbnailTextSize " q6 w500 c" This.CustomColorsGet[Win_Title]["Text"] , This.ThumbnailTextFont)
+                    ThumbObj["TextOverlay"].SystemTextDefaultColor := This.CustomColorsGet[Win_Title]["Text"]
                 }
                 catch as e {
                     CheckError := 1
@@ -66,11 +67,13 @@ Class ThumbWindow extends Propertys {
         if (CheckError || !This.CustomColorsActive) {
             try {
                 ThumbObj["TextOverlay"].SetFont("s" This.ThumbnailTextSize " q6 w500 c0x" This.ThumbnailTextColor, This.ThumbnailTextFont)
+                ThumbObj["TextOverlay"].SystemTextDefaultColor := This.ThumbnailTextColor
             }
             catch as e {
                 MsgBox("Error: Thumbnail Text Color Or Thumbnail Text Font are wrong´nin: Thumbnails Visuals - " This.LastUsedProfile " - Thumbnail Settings`nUse the following syntax:`n HEX =>: #FFFFFF or 0xFFFFFF or FFFFFF`nRGB =>: 255, 255, 255 or rgb(255, 255, 255)`nValues are now Set to Default")
                 This.ThumbnailTextSize := "12", This.ThumbnailTextColor := "fac57a", This.ThumbnailTextFont := "Gill Sans MT"
                 ThumbObj["TextOverlay"].SetFont("s" This.ThumbnailTextSize " q6 w500 c0x" This.ThumbnailTextColor, This.ThumbnailTextFont)
+                ThumbObj["TextOverlay"].SystemTextDefaultColor := This.ThumbnailTextColor
             }
         }
 
@@ -319,10 +322,40 @@ Class ThumbWindow extends Propertys {
 
     updateThumbnailSystemText(text, hwnd) {
         if This.ThumbWindows.HasProp(hwnd) {
-            control := This.ThumbWindows.%hwnd%["TextOverlay"]["SystemText"]
+            overlay := This.ThumbWindows.%hwnd%["TextOverlay"]
+            control := overlay["SystemText"]
             if control.Text != text
                 control.Text := text
+            if text = ""
+                This.ApplyThumbnailSystemColor(overlay, "")
         }
+    }
+
+    RefreshThumbnailSystemColors() {
+        enabled := This.systemTrackingEnabled && This.systemColorsEnabled
+        systems := [], overlays := []
+        for hwnd, thumb in This.ThumbWindows.OwnProps() {
+            if !thumb.Has("TextOverlay")
+                continue
+            overlay := thumb["TextOverlay"]
+            overlays.Push(overlay)
+            if enabled
+                systems.Push(overlay["SystemText"].Text)
+        }
+        if enabled
+            This.systemColors.Update(systems)
+        for overlay in overlays
+            This.ApplyThumbnailSystemColor(overlay, enabled ? This.systemColors.Get(overlay["SystemText"].Text) : "")
+    }
+
+    ApplyThumbnailSystemColor(overlay, color) {
+        if (overlay.HasOwnProp("SystemTextColor") ? overlay.SystemTextColor : "") = color
+            return
+        if color != ""
+            overlay["SystemText"].SetFont("c" color)
+        else
+            overlay["SystemText"].SetFont("c" overlay.SystemTextDefaultColor)
+        overlay.SystemTextColor := color
     }
 
     BorderSize(DesinationHwnd, BorderHwnd, thickness?) {

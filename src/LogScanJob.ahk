@@ -55,7 +55,7 @@ class LogScanJob {
         if status = 0x102 && A_TickCount - this.started < 300000 {
             try {
                 if FileExist(this.directory "\progress.txt") {
-                    serial := FileRead(this.directory "\progress.txt", "UTF-8")
+                    serial := this.ReadSharedText("progress.txt")
                     if serial != this.progress {
                         result := this.ReadResult()
                         this.progress := serial
@@ -85,9 +85,17 @@ class LogScanJob {
     }
 
     ReadResult() {
-        if FileGetSize(this.directory "\output.txt") > 4194304
-            throw Error("Log discovery result exceeded its size limit")
-        return Map("ok", true, "text", FileRead(this.directory "\output.txt", "UTF-8"))
+        return Map("ok", true, "text", this.ReadSharedText("output.txt"))
+    }
+
+    ReadSharedText(name) {
+        ; Allow the worker's atomic FileMove while this snapshot is being read.
+        file := FileOpen(this.directory "\" name, 0x700, "UTF-8") ; Read + share read/write/delete.
+        try {
+            if file.Length > 4194304
+                throw Error("Log discovery result exceeded its size limit")
+            return file.Read()
+        } finally file.Close()
     }
 
     StopProcess() {
