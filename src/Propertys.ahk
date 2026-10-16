@@ -11,6 +11,7 @@ class Propertys extends TrayMenu {
             if This.ThumbWindows.HasProp(hwnd) {
                 newtext := Value
                 if This.ThumbWindows.%hwnd%["Window"].Title != newtext {
+                    This.HideEventBorder(hwnd)
                     This.updateThumbnailEventText("", hwnd)
                     This.updateThumbnailSystemText("", hwnd)
                     This.updateThumbnailDPSText("", hwnd)
@@ -281,6 +282,14 @@ class Propertys extends TrayMenu {
     ShowClientHighlightBorder {
         get => This._JSON["_Profiles"][This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["ShowClientHighlightBorder"]
         set => This._JSON["_Profiles"][This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["ShowClientHighlightBorder"] := value
+    }
+
+    EventActiveBorderMode {
+        get {
+            mode := This.Profiles[This.ProfileThumbnailsVisuals]["Thumbnails Visuals"].Get("EventActiveBorderMode", 1)
+            return mode = 2 ? 2 : (mode = 3 ? 3 : 1)
+        }
+        set => This.Profiles[This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["EventActiveBorderMode"] := value = 2 ? 2 : (value = 3 ? 3 : 1)
     }
     ThumbnailTextFont {
         get => This._JSON["_Profiles"][This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["ThumbnailTextFont"]

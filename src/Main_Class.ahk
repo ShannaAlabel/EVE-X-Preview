@@ -102,7 +102,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Puase Hotkeys if the user has is Set
         if (This.Suspend_Hotkeys_Hotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.Suspend_Hotkeys_Hotkey, ( * ) => This.Suspend_Hotkeys(), "S1"
@@ -115,7 +115,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Hide Thumbnails if the user has is Set
         if (This.HideThumbnailsHotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.HideThumbnailsHotkey, ( * ) => This.ShowHideThumbnails(), "S1"
@@ -128,7 +128,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Click Through if the user has is Set
         if (This.ClickThroughHotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.ClickThroughHotkey, ( * ) => This.Toggle_ClickThrough(), "S1"
@@ -146,14 +146,9 @@ Class Main_Class extends ThumbWindow {
             else
                 HotIf (*) => WinActive(This.EVEExe)
             
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(This.SwitchToPreviousWindow_Hotkey, ObjBindMethod(This, "SwitchToPrevWin"),"P1" )
-                catch ValueError as e
-                    MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Switch to Previous Window - Hotkey")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(This.SwitchToPreviousWindow_Hotkey, ObjBindMethod(This, "SwitchToPrevWin"), "P1", "Previous window")
+            try This.RegisterWindowHotkey(This.SwitchToPreviousWindow_Hotkey, ObjBindMethod(This, "SwitchToPrevWin"), "Previous window")
+            catch ValueError as e
+                MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Switch to Previous Window - Hotkey")
         }
 
         ; Register Hotkey for Login Screen Cycle Hotkey if user set
@@ -163,14 +158,9 @@ Class Main_Class extends ThumbWindow {
             else
                 HotIf (*) => WinActive(This.EVEExe)
             
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(This.CycleEveryLoggedIn_Hotkey, ObjBindMethod(This, "CycleEveryLoggedInWin"),"P1" )
-                catch ValueError as e
-                    MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Every Logged in Window - Hotkey")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(This.CycleEveryLoggedIn_Hotkey, ObjBindMethod(This, "CycleEveryLoggedInWin"), "P1", "Cycle logged in windows")
+            try This.RegisterWindowHotkey(This.CycleEveryLoggedIn_Hotkey, ObjBindMethod(This, "CycleEveryLoggedInWin"), "Cycle logged in windows")
+            catch ValueError as e
+                MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Every Logged in Window - Hotkey")
         }
 
         ; Register Hotkey for Login Screen Cycle Hotkey if user set
@@ -180,14 +170,9 @@ Class Main_Class extends ThumbWindow {
             else
                 HotIf (*) => WinActive(This.EVEExe)
             
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(This.Login_Screen_Cycle_Hotkey, ObjBindMethod(This, "Cycle_Login_Windows"),"P1" )
-                catch ValueError as e
-                    MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Login Screens - Hotkey")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(This.Login_Screen_Cycle_Hotkey, ObjBindMethod(This, "Cycle_Login_Windows"), "P1", "Cycle login screens")
+            try This.RegisterWindowHotkey(This.Login_Screen_Cycle_Hotkey, ObjBindMethod(This, "Cycle_Login_Windows"), "Cycle login screens")
+            catch ValueError as e
+                MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Login Screens - Hotkey")
         }
 
         ; Register Hotkey for Close Active EVE Window Hotkey if user set
@@ -218,7 +203,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Reload EVE-X-Preview Hotkey if user set
         if (This.Reload_Program_Hotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.Reload_Program_Hotkey, ( * ) => Reload(), "S1"
@@ -229,7 +214,7 @@ Class Main_Class extends ThumbWindow {
                 This.RegisterHotkeyWithLanguageRetry(This.Reload_Program_Hotkey, (*) => Reload(), "S1", "Reload program")
         }
 
-        HotIf() ; These application controls also work when no EVE window is open.
+        HotIf (*) => !HotkeyCapture.Active ; Also available without EVE, except while recording.
         if (This.ToggleLivePreviewsHotkey != "") {
             if !This.SwitchLangOnErr {
                 try
@@ -388,6 +373,14 @@ Class Main_Class extends ThumbWindow {
         if profileName = This.runningProfile
             return false
         return This.ActivateProfile(profileName, "Hotkey")
+    }
+
+    RegisterWindowHotkey(keyName, callback, context) {
+        keyName := HotkeyBindings.ForWindowSwitch(keyName)
+        if This.SwitchLangOnErr
+            return This.RegisterHotkeyWithLanguageRetry(keyName, callback, "P1", context)
+        Hotkey(keyName, callback, "P1")
+        return true
     }
 
     RegisterHotkeyWithLanguageRetry(keyName, callback, options, context) {
@@ -682,14 +675,9 @@ Class Main_Class extends ThumbWindow {
         else    
             HotIf (*) => WinExist(title " " This.EVEExe) && WinActive(This.EVEExe) && !WinActive("EVE-X-Preview - Settings")
     
-        if !This.SwitchLangOnErr {
-            try
-                Hotkey SelectedHotkey, (*) => This.ActivateEVEWindow(, title), "P1"
-            catch ValueError as e
-                MsgBox(e.Message ": --> " e.Extra " <-- in Hotkey Settings - " This.LastUsedProfile " Hotkeys")
-        } 
-        else
-            This.RegisterHotkeyWithLanguageRetry(SelectedHotkey, (*) => This.ActivateEVEWindow(, title), "P1", "Activate " title)
+        try This.RegisterWindowHotkey(SelectedHotkey, (*) => This.ActivateEVEWindow(, title), "Activate " title)
+        catch ValueError as e
+            MsgBox(e.Message ": --> " e.Extra " <-- in Hotkey Settings - " This.LastUsedProfile " Hotkeys")
     }    
 
     ;Register the Hotkeys for cycle Groups if any set
@@ -721,25 +709,15 @@ Class Main_Class extends ThumbWindow {
 
             HotIf ObjBindMethod(This, method, This.HotkGroups[index])
             for direction, key in keys {
-                if !This.SwitchLangOnErr {
-                    try
-                        Hotkey(key, ObjBindMethod(This, "Cycle_Hotkey_Groups", index, direction), "P1")
-                    catch ValueError as e
-                        MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - " k "  - " direction)
-                }
-                else
-                    This.RegisterHotkeyWithLanguageRetry(key, ObjBindMethod(This, "Cycle_Hotkey_Groups", index, direction), "P1", "Hotkey group " k " " direction)
+                try This.RegisterWindowHotkey(key, ObjBindMethod(This, "Cycle_Hotkey_Groups", index, direction), "Hotkey group " k " " direction)
+                catch ValueError as e
+                    MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - " k "  - " direction)
             }
 
             if v["FirstCharHotkey"] != "" && v["Characters"].Length > 0 {
-                if !This.SwitchLangOnErr {
-                    try
-                        Hotkey(v["FirstCharHotkey"], ObjBindMethod(This, "ActivateFirstActiveCharInGroup", index), "P1")
-                    catch ValueError as e
-                        MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - First Active Character Hotkey")
-                }
-                else
-                    This.RegisterHotkeyWithLanguageRetry(v["FirstCharHotkey"], ObjBindMethod(This, "ActivateFirstActiveCharInGroup", index), "P1", "First character in hotkey group " k)
+                try This.RegisterWindowHotkey(v["FirstCharHotkey"], ObjBindMethod(This, "ActivateFirstActiveCharInGroup", index), "First character in hotkey group " k)
+                catch ValueError as e
+                    MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - First Active Character Hotkey")
             }
 
             index += 1
@@ -874,13 +852,22 @@ Class Main_Class extends ThumbWindow {
         if hwnd = previousHwnd && previousExe != ""
             return {hwnd: hwnd, exe: previousExe}
         try
-            return {hwnd: hwnd, exe: WinGetProcessName("ahk_id " hwnd)}
+            return {hwnd: hwnd, exe: This._GetWindowProcessName(hwnd)}
         catch TargetError {
             ; Focus can disappear, or the captured window can close during this poll.
             ; Clear the cache so the next poll retries, without aborting queue cleanup.
             return {hwnd: 0, exe: ""}
         }
+        catch OSError as err {
+            if err.Number != 5
+                throw err
+            ; Protected/elevated foreground processes can deny name lookup.
+            ; Treat them as untracked; an empty exe forces a retry next poll.
+            return {hwnd: hwnd, exe: ""}
+        }
     }
+
+    _GetWindowProcessName(hwnd) => WinGetProcessName("ahk_id " hwnd)
 
     _FindGroupWindowIndex(arr, hwnd) {
         if !hwnd
@@ -966,14 +953,9 @@ Class Main_Class extends ThumbWindow {
         else
             HotIf (*) => WinActive(This.EVEExe)
         
-        if !This.SwitchLangOnErr {
-            try
-                Hotkey(This.QuickGroupHotkey, ObjBindMethod(This, "CycleQuickGroup"), "P1")
-            catch ValueError as e
-                MsgBox(e.Message ": --> " e.Extra " <-- in: Thumbnails Interactions - " This.LastUsedProfile " - Quick Group - Hotkey")
-        }
-        else
-            This.RegisterHotkeyWithLanguageRetry(This.QuickGroupHotkey, ObjBindMethod(This, "CycleQuickGroup"), "P1", "Quick group")
+        try This.RegisterWindowHotkey(This.QuickGroupHotkey, ObjBindMethod(This, "CycleQuickGroup"), "Quick group")
+        catch ValueError as e
+            MsgBox(e.Message ": --> " e.Extra " <-- in: Thumbnails Interactions - " This.LastUsedProfile " - Quick Group - Hotkey")
     }
 
     ; Cycle through QuickGroup
@@ -1628,7 +1610,7 @@ Class Main_Class extends ThumbWindow {
                             rect["height"],
                             This.ThumbWindows.%Win_Hwnd% )
 
-            This.BorderSize(This.ThumbWindows.%Win_Hwnd%["Window"].Hwnd, This.ThumbWindows.%Win_Hwnd%["Border"].Hwnd)
+            This.LayoutThumbnailBorders(This.ThumbWindows.%Win_Hwnd%)
             This.Update_Thumb(false, This.ThumbWindows.%Win_Hwnd%["Window"].Hwnd)
             If ((This.HideThumbnailsOnLostFocus && WinActive(This.EVEExe)) || (!This.HideThumbnailsOnLostFocus)) {
                 This.ShowThumb(Win_Hwnd, "Show")
@@ -1954,6 +1936,7 @@ Class Main_Class extends ThumbWindow {
                 continue
             WinMove(x, y, Width, Height, Obj.Hwnd)
         }
+        This.LayoutThumbnailBorders(GuiObj)
     }
 
     ;Saves the possitions of all Windows and stores
@@ -2080,14 +2063,9 @@ Class Main_Class extends ThumbWindow {
 
             for direction in directions {
                 HotIf ObjBindMethod(This, "AtLeastOneWinExist_", gr)
-                if !This.SwitchLangOnErr {
-                    try
-                        Hotkey(directions[direction], ObjBindMethod(This, "CycleNonEVEGroups", index, direction), "P1")
-                    catch ValueError as e
-                        MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " Non-EVE Hotkey Groups")
-                }
-                else
-                    This.RegisterHotkeyWithLanguageRetry(directions[direction], ObjBindMethod(This, "CycleNonEVEGroups", index, direction), "P1", "Non-EVE hotkey group " direction)
+                try This.RegisterWindowHotkey(directions[direction], ObjBindMethod(This, "CycleNonEVEGroups", index, direction), "Non-EVE hotkey group " direction)
+                catch ValueError as e
+                    MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " Non-EVE Hotkey Groups")
             }
             index += 1
             directions := Map()
@@ -2187,14 +2165,9 @@ Class Main_Class extends ThumbWindow {
             if !apps["hotkey"].Has(i) || apps["hotkey"][i] = ""
                 continue
             HotIf ObjBindMethod(This, "OnWinExist_", apps["exe"][i], apps["title"][i])
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(apps["hotkey"][i], ObjBindMethod(This, "ActivateNonEVE", apps["exe"][i], apps["title"][i]), "P1")
-                catch ValueError as e
-                    MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " - Non-EVE Hotkeys")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(apps["hotkey"][i], ObjBindMethod(This, "ActivateNonEVE", apps["exe"][i], apps["title"][i]), "P1", "Non-EVE application")
+            try This.RegisterWindowHotkey(apps["hotkey"][i], ObjBindMethod(This, "ActivateNonEVE", apps["exe"][i], apps["title"][i]), "Non-EVE application")
+            catch ValueError as e
+                MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " - Non-EVE Hotkeys")
         }
     }
 
@@ -2552,7 +2525,7 @@ Class Main_Class extends ThumbWindow {
         This.eventMethods := Map()
 
         This.dpsMonitoringEnabled := This.dpsMonitoring["incomingDPSEnabled"] || This.dpsMonitoring["outgoingDPSEnabled"]
-        This.eventMonitoringEnabled := This.flashBorderEnabled || This.showEventText
+        This.eventMonitoringEnabled := This.flashBorderEnabled || This.showEventText || EventSounds.AnyEnabled(This.monitoredEvents)
         if !This.gameLogsMonitoringEnabled || (!This.eventMonitoringEnabled && !This.dpsMonitoringEnabled)
             return
 
@@ -2934,7 +2907,12 @@ Class Main_Class extends ThumbWindow {
     }
 
     handleEventActivation(charName, shooting := 0) {
-        if !This.monitoredChars.Has(charName) || This.HideThumbnails || (This.HideThumbForActiveWin && WinActive(charName " ahk_exe exefile.exe")) || !WinExist(charName " ahk_exe exefile.exe")
+        if !This.monitoredChars.Has(charName)
+            return
+        try hwnd := This.EventSourceWindow(charName)
+        catch
+            return ; The client can close between reading its log and dispatching.
+        if !hwnd || ((This.supressForFocused || This.HideThumbForActiveWin) && This.EventSourceActive(hwnd))
             return
         if !shooting && (This.monitoredChars[charName]["event"] = "" || This.monitoredChars[charName]["event"] = "stoppedShooting")
             return
@@ -2946,8 +2924,6 @@ Class Main_Class extends ThumbWindow {
         else
             event := This.monitoredChars[charName]["event"]
 
-        hwnd := WinGetID(charName " ahk_exe exefile.exe")
-
         exists := This.eventMethods.Has(charName)
         if !This.lastEventPriority && exists 
             return
@@ -2957,7 +2933,8 @@ Class Main_Class extends ThumbWindow {
         This.debugToolTipText .= "handleEventActivation: event " event " triggered for: " charName "`n"
         SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
 
-        if This.flashBorderEnabled { ; Flashing border if enabled
+        This.PlayEventSound(charName, event)
+        if !This.HideThumbnails && This.flashBorderEnabled { ; Flashing border if enabled
             try {
                 This.flashMethod[charName] := Map()
                 This.flashMethod[charName]["isOn"] := false
@@ -2967,11 +2944,35 @@ Class Main_Class extends ThumbWindow {
                 SetTimer(This.flashMethod[charName]["flashMethod"], This.flashBorderInterval)
             }
         }
-        if This.showEventText {
+        if !This.HideThumbnails && This.showEventText {
             This.updateThumbnailEventText(This.monitoredEventsTexts[event], hwnd)
         }
         This.eventMethods[charName] := ObjBindMethod(This, "endEvent", charName, hwnd)
         SetTimer(This.eventMethods[charName], -This.eventDisplayDuration)
+    }
+
+    PlayEventSound(charName, event, now := 0) {
+        path := This.monitoredEvents[event].Get("sound", "")
+        if path = ""
+            return
+        volume := EventSounds.EffectiveVolume(This._JSON, path, This.monitoredEvents[event])
+        if !volume
+            return
+        This.PlayEventSoundFile(path, volume, event, now)
+    }
+
+    CreateEventSoundMixer() => EventSoundMixer(This._JSON)
+
+    PlayEventSoundFile(path, volume := 100, event := "", now := 0) {
+        if !This.HasOwnProp("eventSoundMixer")
+            This.eventSoundMixer := This.CreateEventSoundMixer()
+        This.eventSoundMixer.Configure(This._JSON)
+        if !This.eventSoundMixer.Play(path, volume, event, now) && This.eventSoundMixer.lastError != "" {
+            if !This.HasOwnProp("eventSoundErrorAt") || A_TickCount - This.eventSoundErrorAt >= 60000 {
+                This.eventSoundErrorAt := A_TickCount
+                ProgramLog.Add("Event sound unavailable: " path "; " This.eventSoundMixer.lastError)
+            }
+        }
     }
 
     endEvent(charName, hwnd) {
@@ -2979,15 +2980,20 @@ Class Main_Class extends ThumbWindow {
             return
         SetTimer(This.eventMethods[charName], 0)
         This.eventMethods.Delete(charName)
+        This.HideEventBorder(hwnd)
 
         This.debugToolTipText .= "endEvent: event ended for: " charName "`n"
         SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
 
-        if This.flashBorderEnabled && This.flashMethod.Has(charName) {
+        if This.flashMethod.Has(charName) {
             flashRef := This.flashMethod[charName]["flashMethod"]
             This.flashMethod.Delete(charName)
             SetTimer(flashRef, 0)
-            This.clearBorder(hwnd, charName)
+            thumb := This.getThumb(hwnd)
+            if thumb && This.SeparateEventBorder(thumb) && This.EventSourceActive(hwnd)
+                This.activateBorder(hwnd, charName)
+            else
+                This.clearBorder(hwnd, charName)
             ; This.ThumbWindows.%hwnd%["Border"].Show("Hide")
 
             if This.LastActiveThumbHwnd = hwnd

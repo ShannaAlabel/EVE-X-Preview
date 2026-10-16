@@ -1,6 +1,8 @@
 ﻿#Include "UpdateChecker.ahk"
 
-Class Settings_Gui {
+#Include "SoundSettings.ahk"
+
+Class Settings_Gui extends SoundSettingsGui {
 
     CheckForUpdates() {
         This.updateChecker.Start(true)
@@ -56,6 +58,9 @@ Class Settings_Gui {
         This.Other_Ctrl()
         This.About_Ctrl()
 
+        This.InitHotkeyHelpers()
+        This.InitColorPickers()
+
         This._Button_Load()
         ControlClick(This.firstBtn)
 
@@ -64,6 +69,10 @@ Class Settings_Gui {
         GuiDestroy(*) {
             ProgramLog.Add("Settings closed; restart required=" This.NeedRestart)
             SetTimer(This.updateUiTimer, 0)
+            This.StopHotkeyHelpers()
+            This.StopColorPickers()
+            This.CloseEventSoundDialog()
+            This.StopTestThumbnail()
             This.S_Gui.Destroy()
             if (This.NeedRestart) {
                 SetTimer(This.Save_Settings_Delay_Timer, 0)
@@ -74,13 +83,23 @@ Class Settings_Gui {
 
         This.S_Gui.Show(Format("w{} h{} Center", This.guiWidth, This.guiHeight))
         This.Sidebar.Show(Format("x{} y{} w{} h{}", 0, 0, This.sidebarW, This.guiHeight))
-        This.MainFrame.Show(Format("x{} y{} w{} h{}", This.sidebarW, 0, This.contentW - 10, This.guiHeight - 10))
+        This.ShowSettingsContent()
         if !This.HasOwnProp("updateChecker")
             This.updateChecker := UpdateChecker()
         This.updateChecker.Start()
         This.updateUiTimer := ObjBindMethod(This, "RefreshUpdateStatus")
         SetTimer(This.updateUiTimer, 200)
         This.RefreshUpdateStatus()
+    }
+
+    ShowSettingsContent() {
+        ; GUI sizes are DPI-scaled, but Show's X/Y are raw parent coordinates.
+        ; Measure the sidebar's actual edge instead of using its logical width.
+        rect := Buffer(16, 0)
+        if !DllCall("GetWindowRect", "Ptr", This.Sidebar.Hwnd, "Ptr", rect)
+            throw OSError()
+        DllCall("MapWindowPoints", "Ptr", 0, "Ptr", This.S_Gui.Hwnd, "Ptr", rect, "UInt", 2)
+        This.MainFrame.Show(Format("x{} y{} w{} h{}", NumGet(rect, 8, "Int"), NumGet(rect, 4, "Int"), This.contentW - 10, This.guiHeight - 10))
     }
 
     SetState() {
@@ -167,7 +186,11 @@ Class Settings_Gui {
             btn.OnEvent("Click", (Obj, *) => This.SettingsGroup_Handler(Obj))
         }
 
-        This.updateNotice := This.Sidebar.Add("Text", Format("x{} y{} w{} h40 c007040", This.contentGap, This.guiHeight - 44, This.sidebarInnerW), "")
+        This.updateNotice := This.Sidebar.Add("Text", Format("x{} y{} w{} h30 c007040", This.contentGap, This.guiHeight - 66, This.sidebarInnerW), "")
+        This.updateNotice.SetFont("s9")
+        This.testThumbnailButton := This.Sidebar.Add("Button", Format("x{} y{} w{} h26 vTestThumbnailButton", This.contentGap, This.guiHeight - 34, This.sidebarInnerW), "Test Thumbnail")
+        This.testThumbnailButton.ToolTip := "Preview current settings at the default position with sample overlays and cycling border states. Click again to close."
+        This.testThumbnailButton.OnEvent("Click", (*) => This.ToggleTestThumbnail())
 
         This.SelectProfile_DDL.Choose(This.LastUsedProfile)
         This.SelectProfile_DDL.OnEvent("Change", (obj,*) => This._Button_Load(Obj))
@@ -184,6 +207,30 @@ Class Settings_Gui {
         This.MainFrame.Group := Map()
     }
 
+    ToggleTestThumbnail() {
+        if This.HasOwnProp("settingsThumbnail") && IsObject(This.settingsThumbnail) {
+            This.StopTestThumbnail()
+            return
+        }
+        This.CancelHotkeyRecording()
+        try {
+            This.settingsThumbnail := SettingsThumbnailPreview(This)
+            This.testThumbnailButton.Text := "Close Test Thumbnail"
+        } catch as err {
+            ProgramLog.Error(err, "Open test thumbnail")
+            MsgBox(err.Message, "Test thumbnail", "Icon! Owner" This.S_Gui.Hwnd)
+        }
+    }
+
+    StopTestThumbnail() {
+        if This.HasOwnProp("settingsThumbnail") && IsObject(This.settingsThumbnail) {
+            preview := This.settingsThumbnail
+            This.settingsThumbnail := 0
+            preview.Close()
+        }
+        try This.testThumbnailButton.Text := "Test Thumbnail"
+    }
+
     ProfileActivationHotkeyChanged(obj, *) {
         This.ProfileActivationHotkey := obj.Value
         This.NeedRestart := 1
@@ -191,6 +238,7 @@ Class Settings_Gui {
     }
 
     SettingsGroup_Handler(Obj) {
+        This.CancelHotkeyRecording()
         for k, v in This.MainFrame.Group {
             if k = Obj.Text {
                 for _, ob in v
@@ -202,6 +250,8 @@ Class Settings_Gui {
             }                
         }
         This.S_Gui.Show()
+        This.ScheduleHotkeyWarnings()
+        This.RefreshColorPickers()
     }
 
     createHtkCaptureBtn() {
@@ -1070,6 +1120,13 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Show Client Highlight Border:")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShowClientHighlightBorder Checked" This.ShowClientHighlightBorder, "On/Off")
 
+        arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Event / Active Border Layout:")
+        borderMode := This.MainFrame.Add("DDL", Format("xp+{} yp-{} w{}", This.offsetX, This.editOffset, This.editW) " vEventActiveBorderMode Choose" This.EventActiveBorderMode,
+            ["Event in, active out", "Active in, event out", "Combined (existing)"])
+        borderMode.ToolTip := "Separate borders: event inside / active outside (default), or active inside / event outside. Combined uses the previous shared-border behavior. Both rings use the client highlight thickness; inactive/group border settings still apply."
+        arr.Push borderMode
+        borderMode.OnEvent("Change", (obj, *) => EventHandler(obj))
+
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Thumbnail Opacity (%):")
         arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp-{} w{}", This.offsetX, This.editOffset, This.editW) " vThumbnailOpacity -Wrap", IntegerToPercentage(This.ThumbnailOpacity))
 
@@ -1190,6 +1247,9 @@ Class Settings_Gui {
             }
             else if (obj.name = "ShowClientHighlightBorder") {
                 This.ShowClientHighlightBorder := obj.value
+            }
+            else if (obj.name = "EventActiveBorderMode") {
+                This.EventActiveBorderMode := obj.value
             }
             else if (obj.name = "ThumbnailOpacity") {
                 This.ThumbnailOpacity := obj.value
@@ -1433,6 +1493,15 @@ Class Settings_Gui {
         ]
 
         editCW := 60
+        controlGap := This.baseGrid
+        soundSize := 26
+        optionW := 64
+        ; Work inward from the panel padding so every row shares the same gaps.
+        soundX := This.contentW - This.contentGap - soundSize
+        previewX := soundX - controlGap - This.cPreviewSize
+        colorX := previewX - controlGap - editCW
+        secondOptionX := colorX - controlGap - optionW
+        firstOptionX := secondOptionX - controlGap - optionW
 
         This.MainFrame.SetFont("s12 w700 q5")
         arr.Push This.MainFrame.Add("Text", Format("x{} y{}", This.contentGap, This.contentGap), "Monitored Events")
@@ -1443,24 +1512,31 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xp yp+{} Section", This.contentGap), "with the number of characters currently being tracked.")
 
         for event in monitoredEventsOrder {
-            label := event = "underAttackByPlayer" ? "Player attack" : event = "underAttackByNPC" ? "NPC attack" : This.monitoredEventsTexts[event]
-            arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), label . (event = "stoppedShooting" ? " (Interval ms):" : ":"))
+            attackEvent := event = "underAttackByPlayer" || event = "underAttackByNPC"
+            label := event = "stoppedShooting" ? "Shooting idle (ms):" : event = "underAttackByPlayer" ? "Player attack" : event = "underAttackByNPC" ? "NPC attack" : This.monitoredEventsTexts[event]
+            nextControlX := event = "stoppedShooting" ? secondOptionX : attackEvent ? firstOptionX : colorX
+            labelWidth := nextControlX - This.contentGap - controlGap
+            arr.Push This.MainFrame.Add("CheckBox", Format("xs ys+{} w{} Section", This.xlGap, labelWidth) " vE" event, label)
 
             if event = "stoppedShooting" {
-                arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp-{} w{}", This.offsetX - 50 - This.baseGrid, This.editOffset, 50) " vshootingInterval")
+                arr.Push This.MainFrame.Add("Edit", Format("x{} ys-{} w{}", secondOptionX, This.editOffset, optionW) " vshootingInterval")
+                This.MainFrame["E" event].ToolTip := "Stopped Shooting: alert after this many milliseconds without an outgoing shot."
+                This.MainFrame["shootingInterval"].ToolTip := "Stopped Shooting interval in milliseconds."
                 This.MainFrame["shootingInterval"].OnEvent("Change", (obj, *) => EventHandler(obj))
             }
 
-            if event = "underAttackByPlayer" || event = "underAttackByNPC" {
-                arr.Push This.MainFrame.Add("CheckBox", "xs+110 ys w65 vN" event, "Neuts")
+            if attackEvent {
+                arr.Push This.MainFrame.Add("CheckBox", Format("x{} ys w{}", firstOptionX, optionW) " vN" event, "Neuts")
                 This.MainFrame["N" event].OnEvent("Click", (obj, *) => EventHandler(obj))
-                arr.Push This.MainFrame.Add("CheckBox", "xs+180 ys w65 vM" event, "Misses")
+                arr.Push This.MainFrame.Add("CheckBox", Format("x{} ys w{}", secondOptionX, optionW) " vM" event, "Misses")
                 This.MainFrame["M" event].OnEvent("Click", (obj, *) => EventHandler(obj))
             }
 
-            arr.Push This.MainFrame.Add("CheckBox", Format("xs+{} ys", This.offsetX) " vE" event, "On/Off")
-            arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp-{} w{}", 60 + This.baseGrid, This.editOffset, editCW) " vC" event)
-            arr.Push This.MainFrame.Add("Text", Format("xp+{} yp w{} h{}", editCW + This.baseGrid, This.cPreviewSize, This.cPreviewSize,) " vPreviewC" event " Border")
+            arr.Push This.MainFrame.Add("Edit", Format("x{} ys-{} w{}", colorX, This.editOffset, editCW) " vC" event)
+            arr.Push This.MainFrame.Add("Text", Format("x{} yp w{} h{}", previewX, This.cPreviewSize, This.cPreviewSize) " vPreviewC" event " Border")
+            soundButton := This.MainFrame.Add("Button", Format("x{} yp-1 w{} h{}", soundX, soundSize, soundSize) " vSound" event, Chr(0x266A))
+            soundButton.OnEvent("Click", ObjBindMethod(This, "OpenEventSoundDialog", event))
+            arr.Push(soundButton)
             
             This.MainFrame["E" event].OnEvent("Click", (obj, *) => EventHandler(obj))
             This.MainFrame["C" event].OnEvent("Change", (obj, *) => EventHandler(obj))
@@ -1494,6 +1570,7 @@ Class Settings_Gui {
         }
 
         This.MainFrame.Group["Monitored Events"] := arr
+        This.RefreshEventSoundButtons()
         for k, v in This.MainFrame.Group["Monitored Events"]
             v.Visible := 0
     }
@@ -2110,6 +2187,7 @@ Class Settings_Gui {
     }
 
     _Button_Load(obj?,*) {
+        This.CancelHotkeyRecording()
         if (IsSet(obj))
             This.NeedRestart := 1
         
@@ -2160,6 +2238,8 @@ Class Settings_Gui {
         }
 
         SetTimer(This.Save_Settings_Delay_Timer, -200)
+        This.ScheduleHotkeyWarnings()
+        This.RefreshColorPickers()
     }
 
     Refresh_ControlValues() {
@@ -2251,6 +2331,7 @@ Class Settings_Gui {
         This.RedrawColorPreview(This.MainFrame["ClientHighligtColor"])
         This.MainFrame["ClientHighligtBorderthickness"].value := This.ClientHighligtBorderthickness
         This.MainFrame["ShowClientHighlightBorder"].value := This.ShowClientHighlightBorder
+        This.MainFrame["EventActiveBorderMode"].Choose(This.EventActiveBorderMode)
         This.MainFrame["AutoSaveThumbnailPositions"].value := This.AutoSaveThumbnailPositions
         This.MainFrame["HideThumbnails"].value := This.HideThumbnails
         This.MainFrame["HideThumbnailsOnLostFocus"].value := This.HideThumbnailsOnLostFocus
@@ -2324,6 +2405,7 @@ Class Settings_Gui {
         }
         This.MainFrame["shootingInterval"].value := This.shootingInterval
         This.MainFrame["IgnorePlayerSmartbombDamage"].Value := This.monitoredEvents["underAttackByPlayer"].Get("ignoreSmartbombDamage", 1)
+        This.RefreshEventSoundButtons()
 
         ; DPS Monitoring
         for name in ["incomingDPSEnabled", "incomingDPSThreshold", "showIncomingDPSResistances", "outgoingDPSEnabled", "outgoingDPSThreshold", "dpsAverageSeconds"]

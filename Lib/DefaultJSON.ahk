@@ -1,4 +1,4 @@
-﻿default_JSON := "
+default_JSON := "
 (
 {
     "settings_version": "3",
@@ -6,6 +6,11 @@
     "First_Start_After_Update": 0,
     "ThisThat" : 0,
     "DebugMode": 0,
+    "SoundLibrary": [],
+    "MasterSoundVolume": 100,
+    "MaxSimultaneousSounds": 1,
+    "SoundRepeatTimeout": 2000,
+    "SoundVolumes": {},
     "_Profiles": {
         "Default": {
             "ActivationHotkey": "",
@@ -74,6 +79,7 @@
                     "y": 5
                 },
                 "ShowClientHighlightBorder": 1,
+                "EventActiveBorderMode": 1,
                 "ClientHighligtColor": "E36A0D",
                 "ClientHighligtBorderthickness": 4,
                 "ThumbnailOpacity": 80,
@@ -204,24 +210,24 @@
                 "flashBorderInterval": 300,
                 "shootingInterval": 10000,
                 "monitoredEvents": {
-                    "underAttackByPlayer": {"enabled": 0, "color": "ff0000", "includeNeutralization": 0, "ignoreSmartbombDamage": 1, "includeMisses": 1},
-                    "underAttackByNPC": {"enabled": 0, "color": "ff8800", "includeNeutralization": 0, "includeMisses": 1},
-                    "engagedWithFactionBSNPC": {"enabled": 0, "color": "11470d"},
-                    "engagedWithOfficerNPC": {"enabled": 0, "color": "340e73"},
-                    "engagedWithCapitalNPC": {"enabled": 0, "color": "ffd700"},
-                    "warpDisrupted": {"enabled": 0, "color": "ff0000"},
-                    "fleetInvited": {"enabled": 0, "color": "2196f3"},
-                    "fleetWarped": {"enabled": 0, "color": "ffeb3b"},
-                    "fleetRegrouped": {"enabled": 0, "color": "ffeb3b"},
-                    "decloaked": {"enabled": 0, "color": "ff0000"},
-                    "convoRequest": {"enabled": 0, "color": "2196f3"},
-                    "conduited": {"enabled": 0, "color": "ffeb3b"},
-                    "gateJumped": {"enabled": 0, "color": "2196f3"},
-                    "crystalBroke": {"enabled": 0, "color": "63f321"},
-                    "miningStopped": {"enabled": 0, "color": "63f321"},
-                    "miningBayIsFull": {"enabled": 0, "color": "63f321"},
-                    "stoppedShooting": {"enabled": 0, "color": "ff8800"},
-                    "undockedFromNPCStation": {"enabled": 0, "color": "2196f3"}
+                    "underAttackByPlayer": {"enabled": 0, "color": "ff0000", "sound": "", "soundVolume": 100, "includeNeutralization": 0, "ignoreSmartbombDamage": 1, "includeMisses": 1},
+                    "underAttackByNPC": {"enabled": 0, "color": "ff8800", "sound": "", "soundVolume": 100, "includeNeutralization": 0, "includeMisses": 1},
+                    "engagedWithFactionBSNPC": {"enabled": 0, "color": "11470d", "sound": "", "soundVolume": 100},
+                    "engagedWithOfficerNPC": {"enabled": 0, "color": "340e73", "sound": "", "soundVolume": 100},
+                    "engagedWithCapitalNPC": {"enabled": 0, "color": "ffd700", "sound": "", "soundVolume": 100},
+                    "warpDisrupted": {"enabled": 0, "color": "ff0000", "sound": "", "soundVolume": 100},
+                    "fleetInvited": {"enabled": 0, "color": "2196f3", "sound": "", "soundVolume": 100},
+                    "fleetWarped": {"enabled": 0, "color": "ffeb3b", "sound": "", "soundVolume": 100},
+                    "fleetRegrouped": {"enabled": 0, "color": "ffeb3b", "sound": "", "soundVolume": 100},
+                    "decloaked": {"enabled": 0, "color": "ff0000", "sound": "", "soundVolume": 100},
+                    "convoRequest": {"enabled": 0, "color": "2196f3", "sound": "", "soundVolume": 100},
+                    "conduited": {"enabled": 0, "color": "ffeb3b", "sound": "", "soundVolume": 100},
+                    "gateJumped": {"enabled": 0, "color": "2196f3", "sound": "", "soundVolume": 100},
+                    "crystalBroke": {"enabled": 0, "color": "63f321", "sound": "", "soundVolume": 100},
+                    "miningStopped": {"enabled": 0, "color": "63f321", "sound": "", "soundVolume": 100},
+                    "miningBayIsFull": {"enabled": 0, "color": "63f321", "sound": "", "soundVolume": 100},
+                    "stoppedShooting": {"enabled": 0, "color": "ff8800", "sound": "", "soundVolume": 100},
+                    "undockedFromNPCStation": {"enabled": 0, "color": "2196f3", "sound": "", "soundVolume": 100}
                 }
             }
         }

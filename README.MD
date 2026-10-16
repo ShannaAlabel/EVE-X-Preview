@@ -8,7 +8,13 @@
 
 Before first use, I suggest creating a backup of your settings. The program creates a backup when settings are migrated, but it is still a good idea to make one manually.
 
-I suggest adding `*` at the beginning of every hotkey used for window activation.
+Use **Test Thumbnail** at the bottom of the Settings sidebar to preview the current default position, size and appearance. It refreshes as you edit settings or change profiles and displays sample system, DPS and event overlays only when their features are enabled. Active/inactive borders, assigned group colors and enabled events cycle every second. Character names rotate through configured custom-color characters with their matching aliases and colors, then custom-name characters when no custom-color characters are available; otherwise varied test names demonstrate different text lengths. The test remains visible while Settings is open, even when normal previews are hidden or paused. Click **Close Test Thumbnail** or close Settings to remove it. It does not capture an EVE client or save a thumbnail position.
+
+Each sample change advances the system through **Jita → Dodixie → Amarr → Hek → Tama → Turnur → Ahbazon**, then repeats. Each system has a distinct demo color whenever system text is enabled, including when the live system-color option is off. Incoming/outgoing DPS and damage-type percentages also vary, including mixed and single-type damage. Samples respect enabled directions and percentage display, and remain above configured DPS thresholds. These sample values and system colors belong only to the test thumbnail; live color assignments and saved settings are preserved.
+
+The test thumbnail follows **Thumbnails Interactions**: use your configured move and resize gestures (by default right-drag to move, Ctrl + both mouse buttons to resize, or both buttons to resize all). Move All/Resize All affect the test thumbnail, and resizing respects the configured minimum size. Activate-click still advances the sample; middle-click also cycles without taking over a configured gesture. Group actions preview their border state, minimize shows the inactive state, hide lasts until the next sample, and close removes the test thumbnail. Moving and resizing are temporary and survive appearance edits; changing the default geometry or selected profile returns the test to that default. Cycling pauses during a gesture.
+
+The program automatically adds `*` when registering window-switching hotkeys so they also work with extra modifiers held. Bindings already containing `*` are used as entered. Custom `key & key` combinations already have wildcard behavior and are preserved as entered; saved settings and displayed text are preserved.
 
 I care a lot about performance, so if you disable some features, the program will stop checking for unnecessary things.
 
@@ -105,6 +111,10 @@ Mouse gestures apply to the thumbnail window that is currently hovered.
 ## Hotkey and key syntax
 
 Hotkeys use AutoHotkey v2 syntax.
+Click the small keyboard button beside a hotkey field to record a shortcut inline. The field turns gray and shows a waiting prompt; press and release the shortcut to fill it. For mouse buttons or the wheel, use the gray field itself. In a multiline hotkey list, click the target line before recording. Esc, clicking the recorder button again, or leaving the field for another setting cancels and keeps the existing binding. Manual editing remains available.
+
+An amber **!** indicates another assignment with the same or overlapping binding. Hover over it or click it to see the other assignments. Checks include the selected profile's effective bindings and all profile activation shortcuts. Repeated bindings can cause unpredictable or inconsistent behavior; warnings never block saving or importing settings.
+
 For a detailed reference, see [Hotkey Modifier Symbols](https://www.autohotkey.com/docs/v2/Hotkeys.htm#Symbols) and [List of Keys](https://www.autohotkey.com/docs/v2/KeyList.htm).
 
 A few useful rules:
@@ -201,10 +211,11 @@ This group controls how thumbnails look.
 * Thumbnail Text Color (Hex/RGB): text color.
 * Thumbnail Text Size: text size.
 * Thumbnail Text Font: font used for thumbnail text.
-* Thumbnail Text Margins (px): text padding inside the thumbnail.
+* Thumbnail Text Margins (px): text padding inside the thumbnail. When double borders are enabled, the inner ring's thickness is added automatically on all sides for every text overlay; configured values remain unchanged. Combined and single-border layouts use the configured margins directly.
 * Client Highlight Color (Hex/RGB): border color for the active client.
 * Client Highlight Border Thickness (px): thickness of the active-client border.
 * Show Client Highlight Border: shows or hides the active-client border.
+* Event / Active Border Layout: **Event in, active out** (default) draws independent, adjacent event and active rings at the thumbnail edge. **Active in, event out** swaps their positions. **Combined (existing)** uses the previous single shared border. Event flashes use the client highlight thickness; inactive and group borders retain their configured styling. Existing event enable, focus-suppression and stop-on-switch settings still apply. The test thumbnail previews both rings together and updates immediately; live thumbnails apply layout changes when Settings closes.
 * Thumbnail Opacity (%): thumbnail transparency.
 * Show All Borders: shows borders around every thumbnail.
 * Inactive Client Border Thickness (px): thickness of inactive-client borders.
@@ -232,6 +243,8 @@ This group controls EVE client behavior.
 * Don't Close Clients: list of clients that should never be closed.
 
 ### Custom Colors
+
+Every color field supports the Windows color picker. Click the colored swatch beside a single color value. For a per-character color list, select the target line and click its picker button. The picker starts with the current color, and Cancel leaves it unchanged. Hex/RGB values can still be entered manually.
 
 Use this group to assign per-character colors.
 
@@ -268,6 +281,18 @@ Performance impact increases with the number of characters tracked at the same t
 
 Monitored events for Game Logs Monitoring feature.
 Enabling more events reduces performance. The effect becomes larger as more characters are tracked.
+
+Click the **♪** button beside any event's color to open **Event Sounds**. **Browse / Add...** adds a user-provided WAV or MP3 file to the shared **Sound library**. Select a library sound, check its events on the right, then click **Apply assignments**. **Select all** prepares to assign one sound to every event in one operation; **Clear checks** prepares to remove this sound from its events. Existing assignments appear in the Current sound column. Before Apply, an orange notice identifies replacements and the button shows how many other sounds will be replaced. Replacements are allowed. Unchecked events using a different sound are preserved. Assigning sounds does not enable disabled events.
+
+The event opened with **♪** is prechecked when choosing a sound, so a single-event assignment also needs only Apply. Checkmarks show existing assignments to the selected file; changes are saved only on Apply. **Clear opened event** immediately removes that event's assignment. **Test selected** previews the library sound; **Test opened event** previews the opened event's actual assignment. The button changes to **♫** when a sound is assigned, with its file path in the tooltip. Playback depends on Windows media support. The application includes no sound files and starts with an empty library.
+
+The dialog has three **0–300% volume** controls. **Master volume** affects every application sound across profiles. **Sound volume** affects every event using the selected library file across profiles. Select an event row to edit **Event volume**, which affects only that event in the effective Monitored Events profile. Sliders snap to 5% steps; the adjacent editable percentage fields accept exact whole values, with or without a percent sign. Slider and text values stay synchronized. Empty or invalid edits preserve the previous setting and normalize on leaving the field; values outside 0-300 are clamped. The gains multiply: 50% master × 50% sound × 50% event = 12.5% final volume. Defaults are all 100%; setting any level to 0% mutes it. Values above 100% amplify the audio: 300% is three times the original signal level. The three gains still multiply, so setting all three to 300% gives 2700% combined gain. Strong boosts can clip already-loud audio. Audio is decoded in bounded chunks and mixed with native gain; original sound files are not modified. Volume edits save immediately and adjust clips already playing without changing Windows or other applications. Test selected uses master × sound; Test opened event also includes its event volume.
+
+The library is shared across profiles; sound assignments and event volumes follow the effective **Monitored Events** profile override. **Remove saved** removes only the library entry, preserving existing event assignments, the file's volume and the original file. The library stores file paths rather than copies, so keep selected files in a stable location. Missing or unsupported audio is skipped during monitoring and recorded in the program log; use Browse to select a moved file again. Sound assignments, all volume levels and the library are included in the settings JSON; moving that JSON to another PC does not transfer audio files.
+
+**Simultaneous sounds** sets the maximum number of event sounds playing together, from 1 to 16 (default 1). A new alert replaces the oldest playing alert when the limit is reached; alerts are not queued for later. Lowering the limit stops the oldest excess clips immediately. **Repeat timeout (ms)** sets the minimum interval between starts of the same sound file across all events and characters, from 0 to 3600000 ms (default 2000). Set it to 0 to allow immediate repeats, including overlapping instances when there is room. Both controls are shared across profiles, save immediately, and are independent of visual alert duration. Muted, missing or failed sounds do not consume the repeat timeout. Manual Test buttons use a separate preview player and ignore these event limits and timeouts.
+
+Enable **Game Logs Monitoring** and the event's checkbox for audio alerts. Sounds work with **Show Event Text** and **Flash Border** disabled, and while thumbnails are hidden. They respect event priority and focused-window suppression (including hiding the active client's thumbnail). The Settings test thumbnail's automatic samples remain silent; use the sound dialog's Test buttons to preview audio.
 
 General NPC recognition matches full English names from a bundled EVE Ref dataset, ignoring case. Player names containing NPC name fragments no longer match. The faction, officer and capital events retain their separate lists and priority. See [NPC data and refresh instructions](src/data/README.md) for coverage and maintenance.
 

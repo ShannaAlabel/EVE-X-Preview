@@ -180,7 +180,14 @@ AssertThrows(callback, expectedText := "", message := "Expected callback to thro
 #Include "Update_Checker_Test.ahk"
 #Include "Group_Activation_Test.ahk"
 #Include "Preview_Diagnostics_Test.ahk"
+#Include "Program_Log_Memory_Test.ahk"
 #Include "Thumbnail_Shift_Test.ahk"
 #Include "Profile_Switch_Test.ahk"
+#Include "Hotkey_Settings_Test.ahk"
+#Include "Settings_Layout_Test.ahk"
+#Include "Color_Settings_Test.ahk"
+#Include "Settings_Thumbnail_Preview_Test.ahk"
+#Include "Thumbnail_Border_Test.ahk"
+#Include "Event_Sounds_Test.ahk"
 
 TestRunner.RunAll()

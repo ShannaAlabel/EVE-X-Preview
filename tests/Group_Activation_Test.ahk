@@ -94,6 +94,48 @@ ForegroundPollingTest() {
     }
 }
 
+class ForegroundLookupFailureFixture extends GroupActivationFixture {
+    failure := 0
+    lookups := 0
+    _GetWindowProcessName(hwnd) {
+        this.lookups++
+        if IsObject(this.failure)
+            throw this.failure
+        return super._GetWindowProcessName(hwnd)
+    }
+}
+
+TestRunner.Register("Access-denied foreground lookups stay untracked and retry without log floods", ForegroundAccessDeniedTest)
+ForegroundAccessDeniedTest() {
+    previousDetectHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := ForegroundLookupFailureFixture()
+    window := Gui()
+    savedLog := ProgramLog.Text
+    try {
+        app.foregrounds := [window.Hwnd]
+        app.failure := OSError(5)
+        info := {hwnd: 0, exe: "stale.exe"}
+        loop 20 {
+            info := app._GetForegroundInfo(info.hwnd, info.exe)
+            AssertEqual(window.Hwnd, info.hwnd)
+            AssertEqual("", info.exe)
+        }
+        AssertEqual(20, app.lookups, "A denied lookup must not cache a stale process name.")
+        AssertEqual(savedLog, ProgramLog.Text)
+        app.failure := 0
+        info := app._GetForegroundInfo(info.hwnd, info.exe)
+        AssertEqual(WinGetProcessName("ahk_id " window.Hwnd), info.exe)
+        app.failure := OSError(6)
+        AssertThrows(() => app._GetForegroundInfo(0, ""), app.failure.Message, "Other OS failures remain visible.")
+        app.failure := MemoryError("Out of memory.")
+        AssertThrows(() => app._GetForegroundInfo(0, ""), "Out of memory.")
+    } finally {
+        window.Destroy()
+        DetectHiddenWindows(previousDetectHidden)
+    }
+}
+
 TestRunner.Register("Group lookup waits only for a relevant pending activation", GroupActivationTest)
 GroupActivationTest() {
     previousDetectHidden := A_DetectHiddenWindows

@@ -142,9 +142,24 @@ Class ThumbWindow extends Propertys {
             }
         }
 
-        size := This.BorderSize(ThumbObj["Window"].Hwnd, ThumbObj["Border"].Hwnd)
+        separateEvents := false
+        if This.EventActiveBorderMode != 3 && This.gameLogsMonitoringEnabled && This.flashBorderEnabled
+            for event, config in This.monitoredEvents
+                if config["enabled"] {
+                    separateEvents := true
+                    break
+                }
+        if separateEvents {
+            ThumbObj["EventBorder"] := Gui("-Caption +ToolWindow +E0x08000020 +Owner" ThumbObj["Window"].Hwnd)
+            ThumbObj["EventBorder"].BackColor := "FF0000"
+            ThumbObj["EventBorder"].EventVisible := false
+            WinSetTransparent(255, ThumbObj["EventBorder"].Hwnd) ; Layered + WS_EX_TRANSPARENT lets gestures pass through the ring.
+        }
+        size := This.LayoutThumbnailBorders(ThumbObj)
 
         ThumbObj["Border"].Show("w" size.w " h" size.h " x" size.x " y" size.y "NoActivate Hide")
+        if ThumbObj.Has("EventBorder")
+            ThumbObj["EventBorder"].Show("w" size.w " h" size.h " x" size.x " y" size.y "NoActivate Hide")
 
         This.EnsureLivePreviewActive(generation)
         return ThumbObj
@@ -236,8 +251,10 @@ Class ThumbWindow extends Propertys {
             return
         overlay.TextLayoutWidth := width
         overlay.TextLayoutHeight := height
-        marginX := Min(Max(0, overlay.MarginX), width / 2)
-        marginY := Min(Max(0, overlay.MarginY), height / 2)
+        ; Border widths are physical pixels; GUI text layout uses DPI-scaled units.
+        padding := overlay.HasOwnProp("BorderTextPadding") ? overlay.BorderTextPadding / (A_ScreenDPI / 96) : 0
+        marginX := Min(Max(0, overlay.MarginX) + padding, width / 2)
+        marginY := Min(Max(0, overlay.MarginY) + padding, height / 2)
         textWidth := Max(0, width - 2 * marginX)
         available := Max(0, height - 2 * marginY)
         ; Reserve the wrapped name first. Utility lines are shown only when a
@@ -358,7 +375,7 @@ Class ThumbWindow extends Propertys {
         overlay.SystemTextColor := color
     }
 
-    BorderSize(DesinationHwnd, BorderHwnd, thickness?) {
+    BorderSize(DesinationHwnd, BorderHwnd, thickness?, inset := 0) {
         if (IsSet(thickness))
             border_thickness := thickness
         else if (This.ShowAllColoredBorders)
@@ -368,19 +385,81 @@ Class ThumbWindow extends Propertys {
 
         WinGetPos(&dx, &dy, &dw, &dh, DesinationHwnd)
 
-        outerX := 0
-        outerY := 0
-        outerX2 := dw
-        outerY2 := dh
+        inset := Min(Max(0, Round(inset)), Floor(Min(dw, dh) / 2))
+        border_thickness := Min(Max(0, Round(border_thickness)), Max(0, Floor(Min(dw, dh) / 2) - inset))
+        outerX := inset
+        outerY := inset
+        outerX2 := dw - inset
+        outerY2 := dh - inset
 
-        innerX := border_thickness
-        innerY := border_thickness
-        innerX2 := dw - border_thickness
-        innerY2 := dh - border_thickness
+        innerX := inset + border_thickness
+        innerY := inset + border_thickness
+        innerX2 := dw - inset - border_thickness
+        innerY2 := dh - inset - border_thickness
 
         WinSetRegion(outerX "-" outerY " " outerX2 "-" outerY " " outerX2 "-" outerY2 " " outerX "-" outerY2 " " outerX "-" outerY "    " innerX "-" innerY " " innerX2 "-" innerY " " innerX2 "-" innerY2 " " innerX "-" innerY2 " " innerX "-" innerY, BorderHwnd)
 
         return { x: dx, y: dy, w: dw, h: dh }
+    }
+
+    SeparateEventBorder(thumb) => This.EventActiveBorderMode != 3 && thumb.Has("EventBorder")
+
+    LayoutThumbnailBorders(thumb, thickness?) {
+        border := thumb["Border"]
+        if IsSet(thickness)
+            border.BorderThickness := thickness
+        else if !border.HasOwnProp("BorderThickness")
+            border.BorderThickness := This.ShowAllColoredBorders ? This.InactiveClientBorderthickness : This.ClientHighligtBorderthickness
+        separate := This.SeparateEventBorder(thumb)
+        eventWidth := This.ClientHighligtBorderthickness
+        inset := separate && This.EventActiveBorderMode = 2 ? eventWidth : 0
+        size := This.BorderSize(thumb["Window"].Hwnd, border.Hwnd, border.BorderThickness, inset)
+        WinMove(size.x, size.y, size.w, size.h, border.Hwnd)
+        if thumb.Has("EventBorder") {
+            eventInset := separate && This.EventActiveBorderMode = 1 ? border.BorderThickness : 0
+            This.BorderSize(thumb["Window"].Hwnd, thumb["EventBorder"].Hwnd, eventWidth, eventInset)
+            WinMove(size.x, size.y, size.w, size.h, thumb["EventBorder"].Hwnd)
+            if !separate {
+                thumb["EventBorder"].EventVisible := false
+                thumb["EventBorder"].Hide()
+            }
+        }
+        if thumb.Has("TextOverlay") {
+            overlay := thumb["TextOverlay"]
+            padding := separate ? Max(0, Round(This.EventActiveBorderMode = 1 ? eventWidth : border.BorderThickness)) : 0
+            previous := overlay.HasOwnProp("BorderTextPadding") ? overlay.BorderTextPadding : 0
+            if previous != padding {
+                overlay.BorderTextPadding := padding
+                This.RefreshThumbnailTextLayout(overlay)
+            }
+        }
+        return size
+    }
+
+    SetEventBorder(hwnd, color, visible) {
+        thumb := This.getThumb(hwnd)
+        if !thumb || !This.SeparateEventBorder(thumb)
+            return
+        border := thumb["EventBorder"]
+        border.EventVisible := !!visible
+        if visible {
+            try border.BackColor := "0x" convertToHex(color)
+            catch
+                border.BackColor := "FF0000"
+            This.LayoutThumbnailBorders(thumb)
+        }
+        if visible && !This.livePreviewsPaused && DllCall("IsWindowVisible", "Ptr", thumb["Window"].Hwnd)
+            border.Show("NoActivate")
+        else
+            border.Hide()
+    }
+
+    HideEventBorder(hwnd) {
+        thumb := This.getThumb(hwnd)
+        if thumb && thumb.Has("EventBorder") {
+            thumb["EventBorder"].EventVisible := false
+            thumb["EventBorder"].Hide()
+        }
     }
 
     ; Move the GUI stack while deferring timer work until the mouse is released.
@@ -424,7 +503,7 @@ Class ThumbWindow extends Propertys {
             if !moveAll && id != source
                 continue
             ; Only GUI components move; never the live thumbnail's source client.
-            for type in ["Window", "TextOverlay", "Border"] {
+            for type in ["Window", "TextOverlay", "Border", "EventBorder"] {
                 if !thumb.Has(type)
                     continue
                 hwnd := thumb[type].Hwnd
@@ -480,7 +559,7 @@ Class ThumbWindow extends Propertys {
             }
 
             This.Update_Thumb(false, hwnd)
-            This.BorderSize(This.ThumbWindows.%This.ThumbHwnd_EvEHwnd[hwnd]%["Window"].Hwnd, This.ThumbWindows.%This.ThumbHwnd_EvEHwnd[hwnd]%["Border"].Hwnd)
+            This.LayoutThumbnailBorders(This.ThumbWindows.%This.ThumbHwnd_EvEHwnd[hwnd]%)
 
             if resizeAll {
                 for ThumbIDs in This.ThumbHwnd_EvEHwnd {
@@ -501,7 +580,7 @@ Class ThumbWindow extends Propertys {
                             continue
                         }
                     }
-                    This.BorderSize(window, border)
+                    This.LayoutThumbnailBorders(This.ThumbWindows.%This.ThumbHwnd_EvEHwnd[ThumbIDs]%)
                 }
                 This.Update_Thumb()
             }
@@ -593,6 +672,11 @@ Class ThumbWindow extends Propertys {
                     continue
                 if (k = "Border" && !This.ShowAllColoredBorders)
                     continue
+                if k = "EventBorder" {
+                    if This.SeparateEventBorder(thumb) && v.EventVisible
+                        v.Show("NoActivate")
+                    continue
+                }
                 
                 if k = "TextOverlay" {
                     if This.ShowThumbnailTextOverlay
@@ -687,10 +771,11 @@ Class ThumbWindow extends Propertys {
         static lastActiveThumbHwnd := EVEHwnd
         static lastActiveThumbTitle := ""
 
-        if This.gameLogsMonitoringEnabled && This.eventMethods.Has(Win_Title) && EVEHwnd = lastActiveThumbHwnd ; Fix for active thumbnail flickering and not displaying event
+        separate := This.SeparateEventBorder(This.ThumbWindows.%EVEHwnd%)
+        if !separate && This.gameLogsMonitoringEnabled && This.eventMethods.Has(Win_Title) && EVEHwnd = lastActiveThumbHwnd
             return
 
-        if This.gameLogsMonitoringEnabled && This.stopDisplayingOnSwitch && This.eventMethods.Has(Win_Title) {
+        if This.gameLogsMonitoringEnabled && This.stopDisplayingOnSwitch && EVEHwnd != lastActiveThumbHwnd && This.eventMethods.Has(Win_Title) {
             This.endEvent(Win_Title, EVEHwnd)
         }
 
@@ -718,7 +803,7 @@ Class ThumbWindow extends Propertys {
         if !IsSet(title)
             title := WinGetTitle("ahk_id " hwnd)
 
-        clearLastThumb := !This.DisabledChars.Has(hwnd) && !This.QuickGroupChars.Has(hwnd) && (!This.flashMethod.Has(title) || This.stopDisplayingOnSwitch)
+        clearLastThumb := !This.DisabledChars.Has(hwnd) && !This.QuickGroupChars.Has(hwnd) && (!This.flashMethod.Has(title) || This.stopDisplayingOnSwitch || This.SeparateEventBorder(thumb))
 
         if !This.CustomColorsActive && !This.ShowAllColoredBorders && clearLastThumb {
             try
@@ -733,7 +818,7 @@ Class ThumbWindow extends Propertys {
                         thumbBorder.BackColor := This.InactiveClientBorderColor
                     catch
                         thumbBorder.BackColor := "8A8A8A"
-                    This.BorderSize(thumbWin.Hwnd, thumbBorder.Hwnd, This.InactiveClientBorderthickness)
+                    This.LayoutThumbnailBorders(thumb, This.InactiveClientBorderthickness)
                 }
                 else if (This.CustomColorsActive && This.ShowAllColoredBorders) {
                     if This.CustomColorsGet[thumbWin.Title]["Char"] != "" && This.CustomColorsGet[thumbWin.Title]["IABorder"] != "" {
@@ -748,13 +833,14 @@ Class ThumbWindow extends Propertys {
                         catch
                             thumbBorder.BackColor := "8A8A8A"
                     }
-                    This.BorderSize(thumbWin.Hwnd, thumbBorder.Hwnd, This.InactiveClientBorderthickness)
+                    This.LayoutThumbnailBorders(thumb, This.InactiveClientBorderthickness)
                 }
+                thumbBorder.Show("NoActivate")
             }
         }
-        else if !This.stopDisplayingOnSwitch && This.flashMethod.Has(title) {
+        else if !This.SeparateEventBorder(thumb) && !This.stopDisplayingOnSwitch && This.flashMethod.Has(title) {
             thumbBorder.BackColor := "0x" This.monitoredEvents[This.flashMethod[title]["event"]]["color"]
-            This.BorderSize(thumbWin.Hwnd, thumbBorder.Hwnd, This.ClientHighligtBorderthickness)
+            This.LayoutThumbnailBorders(thumb, This.ClientHighligtBorderthickness)
         }        
         else if This.DisabledFromGroupsEnabled && This.DisabledChars.Has(hwnd)
             This.toggleColorBorder(hwnd, title, 1, This.DisableFromGroupsColor)
@@ -780,7 +866,7 @@ Class ThumbWindow extends Propertys {
             color := This.ClientHighligtColor
 
         thumb["Border"].BackColor := color
-        This.BorderSize(thumb["Window"].Hwnd, thumb["Border"].Hwnd, This.ClientHighligtBorderthickness)
+        This.LayoutThumbnailBorders(thumb, This.ClientHighligtBorderthickness)
         thumb["Border"].Show("NoActivate")
     }
 
@@ -802,13 +888,8 @@ Class ThumbWindow extends Propertys {
 
         flashmethod := This.flashMethod[title]
 
-        if !This.stopDisplayingOnSwitch && This.supressForFocused && WinActive(title " ahk_exe exefile.exe") {
-            flashmethod["isOn"] := !flashmethod["isOn"]
-            return
-        }
-
         try
-            hwnd := WinGetID(title " ahk_exe exefile.exe")
+            hwnd := This.EventSourceWindow(title)
         catch
             return
 
@@ -821,21 +902,44 @@ Class ThumbWindow extends Propertys {
         if !thumb.Has("Window") || !thumb.Has("Border")
             return
 
+        active := This.EventSourceActive(hwnd)
+        if !This.stopDisplayingOnSwitch && This.supressForFocused && active {
+            flashmethod["isOn"] := !flashmethod["isOn"]
+            if This.SeparateEventBorder(thumb) {
+                This.HideEventBorder(hwnd)
+                This.activateBorder(hwnd, title)
+            }
+            return
+        }
+
         eventKey := flashmethod["event"]
         color := This.monitoredEvents.Has(eventKey) ? This.monitoredEvents[eventKey]["color"] : "ff0000"
+        if This.SeparateEventBorder(thumb) {
+            flashmethod["isOn"] := !flashmethod["isOn"]
+            if active
+                This.activateBorder(hwnd, title)
+            else
+                This.clearBorder(hwnd, title)
+            This.SetEventBorder(hwnd, color, flashmethod["isOn"])
+            return
+        }
         thumb["Border"].BackColor := "0x" color
-        This.BorderSize(thumb["Window"].Hwnd, thumb["Border"].Hwnd, This.ClientHighligtBorderthickness)
+        This.LayoutThumbnailBorders(thumb, This.ClientHighligtBorderthickness)
 
         flashmethod["isOn"] := !flashmethod["isOn"]
         if flashmethod["isOn"]
             thumb["Border"].Show("NoActivate")
         else {
             This.clearBorder(hwnd, title)
-            if WinActive(title " ahk_exe exefile.exe") {
+            if active {
                 This.activateBorder(hwnd, title)
             }
         }
     }
+
+    EventSourceWindow(title) => WinGetID(title " ahk_exe exefile.exe")
+
+    EventSourceActive(hwnd) => WinActive("ahk_id " hwnd)
 
     toggleColorBorder(hwnd, title, enable := 1, color := "ff0000") {
         if This.livePreviewsPaused
@@ -852,7 +956,7 @@ Class ThumbWindow extends Propertys {
             thumb["Border"].BackColor := "0x" color
         catch 
             thumb["Border"].BackColor := "0xffffff"
-        This.BorderSize(thumb["Window"].Hwnd, thumb["Border"].Hwnd, This.ClientHighligtBorderthickness)
+        This.LayoutThumbnailBorders(thumb, This.ClientHighligtBorderthickness)
         
         if enable
             thumb["Border"].Show("NoActivate")

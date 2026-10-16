@@ -15,6 +15,7 @@
 #Include "src/TrayMenu.ahk"
 #Include "src/Propertys.ahk"
 #Include "src/Settings_Gui.ahk"
+#Include "src/SettingsThumbnailPreview.ahk"
 #Include "src/LocalChatMonitor.ahk"
 
 if !IsSet(__EVE_X_PREVIEW_TESTING__)
@@ -34,7 +35,7 @@ if !__EVE_X_PREVIEW_TESTING__ {
 
     A_MaxHotKeysPerInterval := 10000 
 
-    ;@Ahk2Exe-Let U_version = 1.6.1.3
+    ;@Ahk2Exe-Let U_version = 1.6.1.4
     ;@Ahk2Exe-SetVersion %U_version%
     ;@Ahk2Exe-SetFileVersion %U_version%
     ;@Ahk2Exe-SetCopyright gonzo83+khivus
@@ -503,6 +504,12 @@ MigrateSettings(userObj, uver, dver) {
 
 ; Hanles unmanaged Errors
 Error_Handler(Thrown, Mode) {
+    if Thrown is MemoryError && Mode != "ExitApp" {
+        try ProgramLog.RecoverMemory()
+        ; OnError return 1 aborts the failed callback without the blocking dialog.
+        ; Do not continue the failed allocation with an invalid/empty result.
+        return 1
+    }
     try ProgramLog.Error(Thrown, "Unhandled " Mode)
     ; There we try to get right layout of keyboard
     if Thrown.Message == "Invalid key name." {

@@ -221,20 +221,33 @@ CombatOptionsLayoutTest() {
         for event in ["underAttackByPlayer", "underAttackByNPC"] {
             app.MainFrame["N" event].GetPos(&nx, &ny, &nw, &nh)
             app.MainFrame["M" event].GetPos(&mx, &my, &mw)
-            app.MainFrame["E" event].GetPos(&ex, &ey)
+            app.MainFrame["E" event].GetPos(&ex, &ey, &ew)
+            app.MainFrame["C" event].GetPos(&cx)
+            AssertEqual(app.contentGap, ex, "The main event checkbox must lead the row.")
+            AssertTrue(ex + ew <= nx && ey = ny, "The event label must fit before Neuts.")
             AssertTrue(nx + nw <= mx && ny = my, "Misses must fit beside Neuts on the attack row.")
-            AssertTrue(mx + mw <= ex && my = ey, "Misses must fit before the main event checkbox.")
-            label := event = "underAttackByPlayer" ? "Player attack:" : "NPC attack:"
-            labelFound := false
-            for control in app.MainFrame.Group["Monitored Events"] {
-                if control.Text = label {
-                    labelFound := true
-                    control.GetPos(&lx, &ly, &lw)
-                    AssertTrue(lx + lw <= nx && ly = ny, "Neuts must sit beside, without overlapping, its event label.")
-                }
-            }
-            AssertTrue(labelFound, "The compact attack label must be present.")
+            AssertTrue(mx + mw <= cx, "Misses must fit before the color field.")
+            AssertEqual(app.baseGrid, nx - ex - ew, "The event label and options need the same spacing.")
+            AssertEqual(app.baseGrid, mx - nx - nw, "Attack options need the same spacing.")
+            AssertEqual(app.baseGrid, cx - mx - mw, "The options and color need the same spacing.")
+            AssertEqual(event = "underAttackByPlayer" ? "Player attack" : "NPC attack", app.MainFrame["E" event].Text)
         }
+        for event in app.monitoredEventsTexts {
+            app.MainFrame["E" event].GetPos(&ex, &ey, &ew)
+            app.MainFrame["C" event].GetPos(&cx)
+            AssertEqual(app.contentGap, ex, "All event checkboxes must align on the left.")
+            AssertTrue(ex + ew <= cx, "Event labels must fit before their color fields.")
+            if event != "stoppedShooting" && event != "underAttackByPlayer" && event != "underAttackByNPC"
+                AssertEqual(app.baseGrid, cx - ex - ew, "Event labels and colors need the same spacing.")
+        }
+        app.MainFrame["EstoppedShooting"].GetPos(&sx, &sy, &sw)
+        app.MainFrame["shootingInterval"].GetPos(&ix, &iy, &iw)
+        app.MainFrame["CstoppedShooting"].GetPos(&cx)
+        AssertEqual("Shooting idle (ms):", app.MainFrame["EstoppedShooting"].Text)
+        AssertTrue(sx + sw <= ix && ix + iw <= cx, "The shooting interval must fit between its label and color.")
+        AssertEqual(app.baseGrid, ix - sx - sw, "The shooting interval needs the same spacing after its label.")
+        AssertEqual(app.baseGrid, cx - ix - iw, "The shooting interval and color need the same spacing.")
+        AssertEqual(sy - app.editOffset, iy)
         for control in app.MainFrame.Group["Monitored Events"] {
             control.GetPos(&x, &y, &w, &h)
             AssertTrue(x + w <= app.contentW - 10 && y + h <= app.guiHeight - 10, "Event controls must fit the panel.")
