@@ -1422,7 +1422,7 @@ Class Main_Class extends ThumbWindow {
         if This.livePreviewsPaused
             return
         try {
-            WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
+            This.PreviewSourceSize(hwnd, &w, &h)
             if !This.previewQueue.items.Has(hwnd)
                 ProgramLog.Add("Preview queued hwnd=" hwnd " title=" title " size=" w "x" h)
             This.previewQueue.Observe(hwnd, title, w, h)
@@ -1459,7 +1459,8 @@ Class Main_Class extends ThumbWindow {
             ProgramLog.Flush()
             item := This.previewQueue.items[hwnd]
             if !This.ThumbWindows.HasProp(hwnd) && This.TrackClientPossitions && This.ClientPossitions[title]
-                && !item.HasOwnProp("positionRestored") {
+                && !item.HasOwnProp("positionRestored") && !DllCall("IsIconic", "Ptr", hwnd) {
+                ; Restoring placement would un-minimize the client, so minimized ones keep their state.
                 This.RestoreClientPossitions(hwnd, title)
                 item.positionRestored := true
                 item.stableAt := A_TickCount

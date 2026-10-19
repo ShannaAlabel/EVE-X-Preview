@@ -815,6 +815,37 @@ DwmAutoPauseDisabledTest() {
     }
 }
 
+TestRunner.Register("Minimized sources get previews at their restored size without being restored", MinimizedPreviewSourceTest)
+MinimizedPreviewSourceTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    source := Gui("+Resize", "Minimized preview source")
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        source.Show("NoActivate w320 h200")
+        hwnd := source.Hwnd
+        WinGetClientPos(,, &restoredW, &restoredH, "ahk_id " hwnd)
+        WinMinimize("ahk_id " hwnd)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Source must start minimized.")
+        app.PreviewSourceSize(hwnd, &w, &h)
+        AssertEqual(restoredW, w, "Minimized width must come from the restored placement.")
+        AssertEqual(restoredH, h, "Minimized height must come from the restored placement.")
+        app.QueuePreview(hwnd, "Minimized preview source")
+        app.previewQueue.nextAt := A_TickCount
+        app.previewQueue.items[hwnd].stableAt := A_TickCount - 1000
+        app.ProcessPreviewQueue([hwnd])
+        AssertTrue(app.ThumbWindows.HasProp(hwnd), "Minimized source must create a preview without being restored.")
+        AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Preview startup must leave the source minimized.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+}
+
 TestRunner.Register("Hidden previews moved to a saved size relayout their text", HiddenPreviewTextLayoutTest)
 HiddenPreviewTextLayoutTest() {
     previousHidden := A_DetectHiddenWindows
