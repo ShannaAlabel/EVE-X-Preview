@@ -428,10 +428,12 @@ Class ThumbWindow extends Propertys {
             overlay := thumb["TextOverlay"]
             padding := separate ? Max(0, Round(This.EventActiveBorderMode = 1 ? eventWidth : border.BorderThickness)) : 0
             previous := overlay.HasOwnProp("BorderTextPadding") ? overlay.BorderTextPadding : 0
-            if previous != padding {
-                overlay.BorderTextPadding := padding
-                This.RefreshThumbnailTextLayout(overlay)
-            }
+            overlay.BorderTextPadding := padding
+            ; Hidden overlays get no Size event, so follow the actual client size here.
+            overlay.GetClientPos(,, &textW, &textH)
+            if previous != padding || !overlay.HasOwnProp("TextLayoutWidth")
+                || overlay.TextLayoutWidth != textW || overlay.TextLayoutHeight != textH
+                This.LayoutThumbnailText(overlay, 0, textW, textH)
         }
         return size
     }

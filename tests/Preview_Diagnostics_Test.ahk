@@ -814,3 +814,37 @@ DwmAutoPauseDisabledTest() {
         DetectHiddenWindows(oldHidden)
     }
 }
+
+TestRunner.Register("Hidden previews moved to a saved size relayout their text", HiddenPreviewTextLayoutTest)
+HiddenPreviewTextLayoutTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    source := Gui(, "Hidden layout source")
+    thumb := 0
+    try {
+        source.Show("Hide w160 h100")
+        thumb := app.Create_Thumbnail(source.Hwnd, "Hidden layout source")
+        overlay := thumb["TextOverlay"]
+        AssertFalse(DllCall("IsWindowVisible", "Ptr", overlay.Hwnd), "Overlay must still be hidden when moved.")
+        start := Map()
+        for key in ["x", "y", "width", "height"]
+            start[key] := Integer(app.ThumbnailStartLocation[key])
+        for size in [[start["width"] * 2, start["height"] * 2], [Round(start["width"] / 2), Round(start["height"] / 2)]] {
+            app.ThumbMove(start["x"], start["y"], size[1], size[2], thumb)
+            overlay.GetClientPos(,, &w, &h)
+            AssertEqual(w, overlay.TextLayoutWidth, "Layout width must follow the moved overlay.")
+            AssertEqual(h, overlay.TextLayoutHeight, "Layout height must follow the moved overlay.")
+            overlay["OverlayText"].GetPos(&nx,, &nw)
+            AssertTrue(nx + nw <= w, "Name must fit inside the moved overlay.")
+            overlay["EventText"].GetPos(, &ey,, &eh)
+            AssertTrue(ey + eh <= h, "Bottom utility line must stay inside the moved overlay.")
+        }
+    } finally {
+        if thumb
+            for key, obj in thumb
+                try key = "Thumbnail" ? obj.Close() : obj.Destroy()
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+}
