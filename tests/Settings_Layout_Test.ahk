@@ -67,3 +67,63 @@ SettingsPanelParentCoordinatesTest() {
         app.Dispose()
     }
 }
+
+TestRunner.Register("Sidebar status responds to saved changes without moving UI or taking focus", SettingsSaveNoticeTest)
+SettingsSaveNoticeTest() {
+    app := SettingsLayoutFixture()
+    path := A_Temp "\EVE-X-Preview-save-notice-" A_TickCount ".json"
+    try {
+        app.S_Gui.Show("NoActivate x-3000 y-3000 w700 h822")
+        app.Sidebar.Show("NoActivate x0 y0 w240 h822")
+        app.MainFrame.Show("NoActivate x240 y0 w450 h812")
+        AssertEqual("", app.updateNotice.Text, "No save instructions are shown before an edit.")
+        AssertFalse(DllCall("IsWindowVisible", "Ptr", app.updateNotice.Hwnd))
+        fixedWindows := [app.S_Gui, app.Sidebar, app.MainFrame, app.firstBtn, app.testThumbnailButton, app.sidebarStatusBlock]
+        originalRects := []
+        for window in fixedWindows
+            originalRects.Push(SettingsNativeRect(window.Hwnd, 0))
+        app.SaveJsonToFile(path)
+        AssertEqual("", app.updateNotice.Text)
+        app.TrackClientPossitions := !app.TrackClientPossitions
+        AssertThrows(() => app.SaveJsonToFile(path "\missing\settings.json"))
+        AssertEqual("", app.updateNotice.Text, "A failed save must not claim success.")
+        foreground := DllCall("GetForegroundWindow", "Ptr")
+        app.SaveJsonToFile(path)
+        AssertEqual(foreground, DllCall("GetForegroundWindow", "Ptr"), "Autosaving must not activate Settings.")
+        AssertEqual(app.TrackClientPossitions, JSON.Load(FileRead(path))["_Profiles"][app.ProfileClientSettings]["Client Settings"]["TrackClientPossitions"])
+        AssertEqual("Changes saved.`nClose Settings to apply.", app.updateNotice.Text)
+        AssertTrue(DllCall("IsWindowVisible", "Ptr", app.updateNotice.Hwnd))
+        banner := SettingsNativeRect(app.updateNotice.Hwnd, app.Sidebar.Hwnd)
+        sidebar := SettingsNativeRect(app.Sidebar.Hwnd, app.S_Gui.Hwnd)
+        button := SettingsNativeRect(app.testThumbnailButton.Hwnd, app.Sidebar.Hwnd)
+        AssertTrue(banner.left >= 0 && banner.right <= sidebar.right - sidebar.left)
+        AssertTrue(banner.top > button.bottom, "Save feedback sits below the Test Thumbnail button.")
+        AssertTrue(banner.bottom <= sidebar.bottom - sidebar.top, "The notice fits inside the sidebar.")
+        app.BeginSidebarUpdateStatus()
+        app.SetSidebarStatus("No stable updates found.")
+        app.SaveJsonToFile(path)
+        AssertEqual("No stable updates found.", app.updateNotice.Text, "An unchanged save must not replace the latest action.")
+        app.TrackClientPossitions := !app.TrackClientPossitions
+        app.SaveJsonToFile(path)
+        for index, window in fixedWindows {
+            current := SettingsNativeRect(window.Hwnd, 0)
+            original := originalRects[index]
+            for edge in ["left", "top", "right", "bottom"]
+                AssertEqual(original.%edge%, current.%edge%, "Saving must not move or resize the window, panels or buttons.")
+        }
+        AssertEqual("Changes saved.`nClose Settings to apply.", app.updateNotice.Text)
+        app.S_Gui.Destroy()
+        app.TrackClientPossitions := !app.TrackClientPossitions
+        app.SaveJsonToFile(path) ; A pending save is safe after the window closes.
+        app.S_Gui := Gui()
+        app.CreateSidebar()
+        app.CreateMainFrame()
+        app.SaveJsonToFile(path)
+        AssertEqual("", app.updateNotice.Text, "Reopening Settings resets the previous action.")
+    } finally {
+        app.Dispose()
+        for file in [path, path ".save.tmp"]
+            if FileExist(file)
+                FileDelete(file)
+    }
+}

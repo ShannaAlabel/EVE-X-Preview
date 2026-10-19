@@ -80,26 +80,6 @@ Class Main_Class extends ThumbWindow {
 
         This.Save_Settings_Delay_Timer := ObjBindMethod(This, "SaveJsonToFile")
 
-        if This.First_Start_After_Update { ; Display message after succsessful update
-            Sleep 3000 ; Let updater time to close
-            SetWorkingDir(A_ScriptDir)
-            
-            ; Check for both old and new updater locations
-            updaterExeName := "EVE-X-Preview-Updater.exe"
-            updaterExePath := A_Temp "\" updaterExeName
-
-            if FileExist(updaterExeName)
-                FileDelete(updaterExeName)
-            if FileExist(updaterExePath)
-                FileDelete(updaterExePath)
-
-            This.First_Start_After_Update := 0
-            SetTimer(This.Save_Settings_Delay_Timer, -200)
-
-            Version := FileGetVersion(A_ScriptName)
-            MsgBox("EVE-X-Preview succsessfully updated to version " Version)
-        }
-
         ; Register Hotkey for Puase Hotkeys if the user has is Set
         if (This.Suspend_Hotkeys_Hotkey != "") {
             HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
@@ -320,7 +300,30 @@ Class Main_Class extends ThumbWindow {
         This.gameLogsMonitoring()
         This.startSystemTracking()
 
+        This.ShowPostUpdateChangelog()
         return This
+    }
+
+    ShowPostUpdateChangelog() {
+        if !This.First_Start_After_Update
+            return
+        This.First_Start_After_Update := 0
+        SetTimer(This.Save_Settings_Delay_Timer, -200)
+        ; Initialization and monitoring finish before opening the modeless notice.
+        SetTimer((*) => ChangelogWindow.Show(true), -1)
+        ; Give the updater time to exit without delaying startup or the UI.
+        SetTimer(ObjBindMethod(This, "CleanupUpdater"), -3000)
+    }
+
+    CleanupUpdater(*) {
+        for path in [A_ScriptDir "\EVE-X-Preview-Updater.exe", A_Temp "\EVE-X-Preview-Updater.exe"] {
+            try {
+                if FileExist(path)
+                    FileDelete(path)
+            } catch as err {
+                ProgramLog.Add("Updater cleanup skipped; path=" path "; " err.Message, "WARN")
+            }
+        }
     }
 
     RegisterProfileHotkeys() {
@@ -1455,7 +1458,7 @@ Class Main_Class extends ThumbWindow {
             ProgramLog.Add("Preview startup hwnd=" hwnd " title=" title " queued=" This.previewQueue.items.Count)
             ProgramLog.Flush()
             item := This.previewQueue.items[hwnd]
-            if !This.ThumbWindows.HasProp(hwnd) && This.TrackClientPossitions && This.ClientPossitions.Has(title)
+            if !This.ThumbWindows.HasProp(hwnd) && This.TrackClientPossitions && This.ClientPossitions[title]
                 && !item.HasOwnProp("positionRestored") {
                 This.RestoreClientPossitions(hwnd, title)
                 item.positionRestored := true
@@ -1845,7 +1848,7 @@ Class Main_Class extends ThumbWindow {
         ProgramLog.Add("Activation requested; target=" hwnd "; source=" This.pendingEVEActivation.source)
 
         If (DllCall("IsIconic", "UInt", hwnd)) {
-            if This.AlwaysMaximize || (This.TrackClientPossitions && This.ClientPossitions.Has(title) && This.ClientPossitions[title]["IsMaximized"]) {
+            if This.AlwaysMaximize || (This.TrackClientPossitions && This.ClientPossitions[title] && This.ClientPossitions[title]["IsMaximized"]) {
                 ; Maximize
                 This.ShowWindowAsync(hwnd, 3)
             }
@@ -2301,12 +2304,14 @@ Class Main_Class extends ThumbWindow {
             ProgramLog.Add("Saving settings; profile=" This.LastUsedProfile)
             if FileExist(tempPath)
                 FileDelete(tempPath)
-            FileAppend(JSON.Dump(This._JSON, , "    "), tempPath)
+            serializedSettings := JSON.Dump(This._JSON, , "    ")
+            FileAppend(serializedSettings, tempPath)
             FileMove(tempPath, savePath, 1)
             ProgramLog.Add("Settings saved")
         } finally {
             Critical(previousCritical)
         }
+        This.SettingsSaveCompleted(serializedSettings)
     }
 
     ; Thanks to SKAN

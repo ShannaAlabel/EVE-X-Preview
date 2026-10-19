@@ -336,6 +336,105 @@ PreviewRecoveryIsolationTest() {
     }
 }
 
+; Record window placement requests while keeping test sources hidden.
+class PreviewClientPositionFixture extends PreviewLifecycleFixture {
+    placements := []
+    showCommands := []
+    SetWindowPlacement(hwnd := "", x := "", y := "", w := "", h := "", action := 9) {
+        this.placements.Push([hwnd, x, y, w, h, action])
+    }
+    ShowWindowAsync(hwnd, command := 9) {
+        this.showCommands.Push([hwnd, command])
+    }
+    _GetForegroundHwnd() {
+        return 0
+    }
+    _ObserveEVEActivation(*) {
+    }
+    hitThis() {
+    }
+}
+
+TestRunner.Register("Position tracking starts previews with saved or missing positions in both modes", PreviewClientPositionStartupTest)
+PreviewClientPositionStartupTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        for slow in [false, true] {
+            for saved in [false, true] {
+                app := PreviewClientPositionFixture()
+                source := Gui(, "EVE - Position startup test")
+                try {
+                    source.Show("Hide w160 h100")
+                    hwnd := source.Hwnd
+                    title := WinGetTitle("ahk_id " hwnd)
+                    app.TrackClientPossitions := true
+                    app.previewQueue := PreviewStartupQueue(0, slow)
+                    if saved
+                        app.ClientPossitions[title] := [100, 120, 640, 480, 0]
+                    app.QueuePreview(hwnd, title)
+                    app.previewQueue.items[hwnd].stableAt -= 500
+                    app.ProcessPreviewQueue([hwnd])
+                    if slow && saved {
+                        AssertFalse(app.ThumbWindows.HasProp(hwnd), "Slow mode lets restored sources settle.")
+                        AssertTrue(app.previewQueue.items[hwnd].positionRestored)
+                        app.previewQueue.items[hwnd].stableAt -= 500
+                        app.previewQueue.nextAt := 0
+                        app.ProcessPreviewQueue([hwnd])
+                    }
+                    AssertTrue(app.ThumbWindows.HasProp(hwnd), "Position tracking must not block startup.")
+                    AssertEqual(0, app.previewQueue.items.Count)
+                    AssertEqual(saved ? 1 : 0, app.placements.Length, "Only saved sources are restored, once.")
+                    if saved
+                        AssertEqual([hwnd, 100, 120, 640, 480, 4], app.placements[1])
+                    AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+                } finally {
+                    app.DisposePreview(source.Hwnd)
+                    SetTimer(app.debugToolTipMethod, 0)
+                    source.Destroy()
+                }
+                AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            }
+        }
+    } finally {
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
+TestRunner.Register("Minimized client activation honors tracked positions and missing entries", PreviewClientPositionActivationTest)
+PreviewClientPositionActivationTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewClientPositionFixture()
+    source := Gui(, "EVE - Position activation test")
+    preview := Gui()
+    try {
+        source.Show("Hide w160 h100")
+        hwnd := source.Hwnd
+        title := WinGetTitle("ahk_id " hwnd)
+        app.ThumbHwnd_EvEHwnd[preview.Hwnd] := "ahk_id " hwnd
+        ; Exercise the minimized branch without showing or focusing a window.
+        WinSetStyle("+0x20000000", "ahk_id " hwnd)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd))
+        app.TrackClientPossitions := true
+        app.MinimizeInactiveClients := false
+        app.AlwaysMaximize := false
+        app.WinActivationHistory := []
+        for state in ["missing", "normal", "maximized"] {
+            if state != "missing"
+                app.ClientPossitions[title] := [100, 120, 640, 480, state = "maximized"]
+            AssertTrue(app.ActivateEVEWindow(preview.Hwnd))
+            AssertEqual([hwnd, state = "maximized" ? 3 : 9], app.showCommands[A_Index])
+        }
+    } finally {
+        SetTimer(app.debugToolTipMethod, 0)
+        source.Destroy()
+        preview.Destroy()
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
 TestRunner.Register("Fast previews have no startup waits and slow mode persists", FastPreviewModeTest)
 FastPreviewModeTest() {
     q := PreviewStartupQueue(0)

@@ -383,6 +383,8 @@ Each profile can also disable that override, which makes that group unique for t
 
 ### About
 
+Use **Show Changelog** in About to read the full changelog in a resizable window. Markdown headings appear larger and bold, with formatted bullets, inline bold and code. Text wraps and can be selected or copied. It also opens automatically after an update, showing the installed version. Monitoring, hotkeys and Settings remain available while it is open. The changelog is bundled with compiled releases and works offline.
+
 Buttons:
 * Check Updates: click to checks aviable updates.
 * Update to Release: after update checking can use for update/downgrade to latest release version.

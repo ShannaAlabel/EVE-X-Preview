@@ -178,6 +178,7 @@ AssertThrows(callback, expectedText := "", message := "Expected callback to thro
 #Include "Thumbnail_Drag_Test.ahk"
 #Include "Log_Worker_Test.ahk"
 #Include "Update_Checker_Test.ahk"
+#Include "Changelog_Test.ahk"
 #Include "Group_Activation_Test.ahk"
 #Include "Preview_Diagnostics_Test.ahk"
 #Include "Program_Log_Memory_Test.ahk"

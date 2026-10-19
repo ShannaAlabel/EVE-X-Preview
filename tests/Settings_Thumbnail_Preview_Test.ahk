@@ -474,13 +474,13 @@ SettingsThumbnailEventProfileTest() {
     }
 }
 
-TestRunner.Register("Test thumbnail button occupies a separated sidebar footer below the update notice", SettingsThumbnailButtonTest)
+TestRunner.Register("Test thumbnail button stays above the shared sidebar status footer", SettingsThumbnailButtonTest)
 SettingsThumbnailButtonTest() {
     app := SettingsThumbnailFixture()
     try {
         button := app.testThumbnailButton
         button.GetPos(&x, &y, &w, &h)
-        app.updateNotice.GetPos(, &noticeY,, &noticeH)
+        app.sidebarStatusBlock.GetPos(, &noticeY,, &noticeH)
         lastGroupBottom := 0
         for control in app.Sidebar {
             if control.Type != "Button" || control = button
@@ -488,8 +488,9 @@ SettingsThumbnailButtonTest() {
             control.GetPos(, &cy,, &ch)
             lastGroupBottom := Max(lastGroupBottom, cy + ch)
         }
-        AssertTrue(y >= lastGroupBottom + app.xlGap && noticeY + noticeH <= y)
-        AssertTrue(x + w <= app.sidebarW && y + h = app.guiHeight - 8)
+        AssertTrue(y >= lastGroupBottom + app.baseGrid && y + h <= noticeY)
+        AssertTrue(noticeY + noticeH <= app.guiHeight - 8)
+        AssertTrue(x + w <= app.sidebarW && y + h = app.guiHeight - 56, "The footer reserves a compact fixed status block.")
         id := DllCall("GetDlgCtrlID", "Ptr", button.Hwnd, "Int")
         PostMessage(0x111, id & 0xFFFF, button.Hwnd,, "ahk_id " app.Sidebar.Hwnd)
         Sleep(30)

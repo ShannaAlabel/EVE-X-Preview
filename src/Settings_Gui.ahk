@@ -5,6 +5,7 @@
 Class Settings_Gui extends SoundSettingsGui {
 
     CheckForUpdates() {
+        This.BeginSidebarUpdateStatus()
         This.updateChecker.Start(true)
         SetTimer(This.updateUiTimer, 200)
         This.RefreshUpdateStatus()
@@ -16,7 +17,18 @@ Class Settings_Gui extends SoundSettingsGui {
         This.latestReleaseTag := checker.releaseTag
         This.latestPreReleaseTag := checker.preReleaseTag
         newer := UpdateChecker.IsNewer(checker.releaseTag, This.programVersion)
-        This.updateNotice.Value := newer ? "Update available: v" checker.releaseTag "`nSee About to install." : ""
+        if checker.busy
+            notice := "Checking for updates..."
+        else if newer
+            notice := "Update available: v" checker.releaseTag "`nSee About to install."
+        else if checker.status = "Updates checked."
+            notice := "No stable updates found."
+        else if checker.status = "Not checked yet."
+            notice := "Updates not checked yet."
+        else
+            notice := "Update check unavailable.`nTry again in About."
+        if This.HasOwnProp("sidebarStatusOwner") && This.sidebarStatusOwner = "update"
+            This.SetSidebarStatus(notice)
         This.MainFrame["latestReleaseVersion"].Value := checker.releaseTag != "" ? "v" checker.releaseTag : "unknown"
         This.MainFrame["latestPreReleaseVersion"].Value := checker.preReleaseTag != "" ? "v" checker.preReleaseTag : "unknown"
         This.MainFrame["UpdateStatus"].Value := checker.status = "Updates checked." ? (newer ? "Update available." : "No newer stable release.") : checker.status
@@ -63,6 +75,7 @@ Class Settings_Gui extends SoundSettingsGui {
 
         This._Button_Load()
         ControlClick(This.firstBtn)
+        This.ResetSidebarStatus()
 
         This.S_Gui.OnEvent("Close", (*) => GuiDestroy())
 
@@ -73,6 +86,7 @@ Class Settings_Gui extends SoundSettingsGui {
             This.StopColorPickers()
             This.CloseEventSoundDialog()
             This.StopTestThumbnail()
+            This.sidebarStatusHwnd := 0
             This.S_Gui.Destroy()
             if (This.NeedRestart) {
                 SetTimer(This.Save_Settings_Delay_Timer, 0)
@@ -86,10 +100,63 @@ Class Settings_Gui extends SoundSettingsGui {
         This.ShowSettingsContent()
         if !This.HasOwnProp("updateChecker")
             This.updateChecker := UpdateChecker()
+        This.BeginSidebarUpdateStatus()
         This.updateChecker.Start()
         This.updateUiTimer := ObjBindMethod(This, "RefreshUpdateStatus")
         SetTimer(This.updateUiTimer, 200)
         This.RefreshUpdateStatus()
+    }
+
+    ResetSidebarStatus() {
+        This.sidebarStatusHwnd := This.S_Gui.Hwnd
+        This.sidebarSettingsSnapshot := JSON.Dump(This._JSON, , "    ")
+        This.sidebarStatusOwner := ""
+        This.updateNotice.Value := ""
+        This.updateNotice.Visible := false
+        This.sidebarStatusBlock.Visible := false
+    }
+
+    SetSidebarStatus(message) {
+        if !This.HasOwnProp("sidebarStatusHwnd") || !This.sidebarStatusHwnd
+            || !DllCall("IsWindow", "Ptr", This.sidebarStatusHwnd)
+            return
+        This.updateNotice.Value := message
+        if message != "" {
+            This.sidebarStatusBlock.GetPos(&x, &y, &width, &height)
+            scale := A_ScreenDPI / 96
+            rect := Buffer(16, 0)
+            NumPut("Int", Round(width * scale), rect, 8)
+            dc := DllCall("GetDC", "Ptr", This.updateNotice.Hwnd, "Ptr")
+            font := SendMessage(0x31, 0, 0, This.updateNotice) ; WM_GETFONT
+            previousFont := DllCall("SelectObject", "Ptr", dc, "Ptr", font, "Ptr")
+            try {
+                ; Measure wrapped text so both one- and two-line messages are centered.
+                DllCall("DrawTextW", "Ptr", dc, "Str", message, "Int", -1, "Ptr", rect, "UInt", 0xC10)
+                textHeight := Min(height, Ceil(NumGet(rect, 12, "Int") / scale))
+                This.updateNotice.Move(x, y + Floor((height - textHeight) / 2), width, textHeight)
+            } finally {
+                DllCall("SelectObject", "Ptr", dc, "Ptr", previousFont)
+                DllCall("ReleaseDC", "Ptr", This.updateNotice.Hwnd, "Ptr", dc)
+            }
+        }
+        This.sidebarStatusBlock.Visible := message != ""
+        This.updateNotice.Visible := message != ""
+    }
+
+    BeginSidebarUpdateStatus() {
+        ; A pending save from an earlier edit must not replace this action.
+        This.sidebarSettingsSnapshot := JSON.Dump(This._JSON, , "    ")
+        This.sidebarStatusOwner := "update"
+    }
+
+    SettingsSaveCompleted(serializedSettings) {
+        if !This.HasOwnProp("sidebarStatusHwnd") || !This.sidebarStatusHwnd
+            || !DllCall("IsWindow", "Ptr", This.sidebarStatusHwnd)
+            || serializedSettings = This.sidebarSettingsSnapshot
+            return
+        This.sidebarSettingsSnapshot := serializedSettings
+        This.sidebarStatusOwner := "save"
+        This.SetSidebarStatus("Changes saved.`nClose Settings to apply.")
     }
 
     ShowSettingsContent() {
@@ -182,15 +249,19 @@ Class Settings_Gui extends SoundSettingsGui {
                 This.firstBtn := btn
             }
             else
-                btn := This.Sidebar.Add("Button", Format("xp yp+{} w{} h{}", This.btnH + This.baseGrid, This.sidebarInnerW, This.btnH), btn_text)
+                btn := This.Sidebar.Add("Button", Format("xp yp+{} w{} h{}", This.btnH + This.baseGrid / 2, This.sidebarInnerW, This.btnH), btn_text)
             btn.OnEvent("Click", (Obj, *) => This.SettingsGroup_Handler(Obj))
         }
 
-        This.updateNotice := This.Sidebar.Add("Text", Format("x{} y{} w{} h30 c007040", This.contentGap, This.guiHeight - 66, This.sidebarInnerW), "")
-        This.updateNotice.SetFont("s9")
-        This.testThumbnailButton := This.Sidebar.Add("Button", Format("x{} y{} w{} h26 vTestThumbnailButton", This.contentGap, This.guiHeight - 34, This.sidebarInnerW), "Test Thumbnail")
+        This.testThumbnailButton := This.Sidebar.Add("Button", Format("x{} y{} w{} h26 vTestThumbnailButton", This.contentGap, This.guiHeight - 82, This.sidebarInnerW), "Test Thumbnail")
         This.testThumbnailButton.ToolTip := "Preview current settings at the default position with sample overlays and cycling border states. Click again to close."
         This.testThumbnailButton.OnEvent("Click", (*) => This.ToggleTestThumbnail())
+
+        ; One fixed status area reports the latest save or update-check action.
+        This.sidebarStatusBlock := This.Sidebar.Add("Text", Format("x{} y{} w{} h40 Hidden BackgroundE3F3DE", This.contentGap, This.guiHeight - 48, This.sidebarInnerW), "")
+        This.updateNotice := This.Sidebar.Add("Text", Format("x{} y{} w{} h40 Hidden Center +0x80 BackgroundE3F3DE c245A21", This.contentGap, This.guiHeight - 48, This.sidebarInnerW), "")
+        This.updateNotice.SetFont("s10 w700", "Segoe UI")
+        This.ResetSidebarStatus()
 
         This.SelectProfile_DDL.Choose(This.LastUsedProfile)
         This.SelectProfile_DDL.OnEvent("Change", (obj,*) => This._Button_Load(Obj))
@@ -1833,6 +1904,7 @@ Class Settings_Gui extends SoundSettingsGui {
 
     Other_Ctrl() {
         This.MainFrame.Group["Other"] := [], Other := []
+        topSettingsGap := This.xlGap
 
         This.GlobalGroupsOrder := [
             "Hotkey Groups",
@@ -1859,10 +1931,10 @@ Class Settings_Gui extends SoundSettingsGui {
         Other.Push This.MainFrame.Add("Text", Format("xp yp+{} Section", This.lGap), "Slow Thumbnail Creation:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vSlowThumbnailCreation Checked" This.SlowThumbnailCreation, "On/Off")
         This.MainFrame["SlowThumbnailCreation"].ToolTip := "Off: create ready previews immediately. On: wait 3 seconds, then stagger previews to reduce startup GPU pressure."
-        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.lGap), "Auto-Pause on DWM Failure:")
+        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", topSettingsGap), "Auto-Pause on DWM Failure:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vAutoPauseOnDwmFailure Checked" This.AutoPauseOnDwmFailure, "On/Off")
         This.MainFrame["AutoPauseOnDwmFailure"].ToolTip := "Enabled by default. Pause live previews on DWM errors or Windows composition changes. Resume manually in About or with the pause/resume hotkey. Applies immediately."
-        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.lGap), "Switch Language to English on Error:")
+        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", topSettingsGap), "Switch Language to English on Error:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vSwitchLangOnErr Checked" This.SwitchLangOnErr, "On/Off")
 
         Other.Push This.MainFrame.Add("Text", Format("xs ys+{} w{} h2 +0x10", This.xlGap, This.sepW))
@@ -1975,17 +2047,7 @@ Class Settings_Gui extends SoundSettingsGui {
     About_Ctrl() {
         arr := []
 
-        try {
-            if A_IsCompiled
-                This.programVersion := FileGetVersion(A_ScriptFullPath)
-            else {
-                if !RegExMatch(FileRead(A_ScriptDir "\Main.ahk"), "U_version = ([\d.]+)", &versionMatch)
-                    throw Error("Source version missing")
-                This.programVersion := versionMatch[1]
-            }
-        }
-        catch
-            This.programVersion := "1.0.0.0"
+        This.programVersion := UpdateChecker.CurrentVersion()
 
         updBtnW := 158
         offsetX := 150
@@ -2012,6 +2074,8 @@ Class Settings_Gui extends SoundSettingsGui {
         arr.Push This.MainFrame.Add("Text", Format("xp+{} yp w260 h24", offsetX) " vUpdateStatus", "Not checked yet.")
 
         arr.Push This.MainFrame.Add("Button", Format("xs ys+{} Section", This.xlGap) " vcheckUpdatesBtn", "Check Updates")
+        arr.Push This.MainFrame.Add("Button", Format("x+{} yp", This.baseGrid) " vshowChangelogBtn", "Show Changelog")
+        This.MainFrame["showChangelogBtn"].OnEvent("Click", (*) => ChangelogWindow.Show())
 
         arr.Push This.MainFrame.Add("Button", Format("xs ys+{} w{} Section", This.captBtnH + This.contentGap, updBtnW) " vupdateToReleaseBtn", "Update to Release")
         arr.Push This.MainFrame.Add("Button", Format("xs+{} ys w{}", updBtnW + This.baseGrid, updBtnW) " vupdateToPreReleaseBtn", "Update to Pre-Release")

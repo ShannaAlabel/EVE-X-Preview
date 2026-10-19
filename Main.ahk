@@ -15,6 +15,8 @@
 #Include "src/TrayMenu.ahk"
 #Include "src/Propertys.ahk"
 #Include "src/Settings_Gui.ahk"
+#Include "src/ChangelogWindow.ahk"
+#Include "src/SimpleMarkdown.ahk"
 #Include "src/SettingsThumbnailPreview.ahk"
 #Include "src/LocalChatMonitor.ahk"
 
@@ -35,7 +37,7 @@ if !__EVE_X_PREVIEW_TESTING__ {
 
     A_MaxHotKeysPerInterval := 10000 
 
-    ;@Ahk2Exe-Let U_version = 1.6.1.4
+    ;@Ahk2Exe-Let U_version = 1.6.1.5
     ;@Ahk2Exe-SetVersion %U_version%
     ;@Ahk2Exe-SetFileVersion %U_version%
     ;@Ahk2Exe-SetCopyright gonzo83+khivus
@@ -49,6 +51,7 @@ if !__EVE_X_PREVIEW_TESTING__ {
     ;@Ahk2Exe-AddResource icon-suspend.ico, 208  ; Replaces 'S on red'
 
     ;@Ahk2Exe-AddResource src/LogScanWorker.ahk, LogScanWorker
+    ;@Ahk2Exe-AddResource Changelog, Changelog
     ;@Ahk2Exe-SetMainIcon icon.ico
 
     if !(A_IsCompiled)

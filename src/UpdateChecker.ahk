@@ -114,4 +114,15 @@ class UpdateChecker {
     static IsNewer(tag, current) {
         return tag != "" && VerCompare(tag, current) > 0
     }
+
+    static CurrentVersion() {
+        try {
+            if A_IsCompiled
+                return FileGetVersion(A_ScriptFullPath)
+            SplitPath(A_LineFile, , &sourceDirectory)
+            if RegExMatch(FileRead(sourceDirectory "\..\Main.ahk"), "U_version = ([\d.]+)", &versionMatch)
+                return versionMatch[1]
+        }
+        return "1.0.0.0"
+    }
 }

@@ -141,7 +141,7 @@ default_JSON := "
             },
             "Other": {
                 "SlowThumbnailCreation": 0,
-                "AutoPauseOnDwmFailure": 1,
+                "AutoPauseOnDwmFailure": 0,
                 "SwitchLangOnErr": 0,
                 "Global_Groups": {
                     "Client Settings": 0,

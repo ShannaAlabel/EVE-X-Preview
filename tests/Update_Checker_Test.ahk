@@ -86,3 +86,65 @@ UpdateFailureTest() {
         checker.Finish("Done")
     }
 }
+
+TestRunner.Register("Shared sidebar status follows the latest save or asynchronous update action", UpdateSidebarStatusTest)
+UpdateSidebarStatusTest() {
+    app := SettingsLayoutFixture()
+    checker := UpdateCheckerFixture()
+    path := A_Temp "\EVE-X-Preview-update-status-" A_TickCount ".json"
+    try {
+        app.About_Ctrl()
+        app.programVersion := "1.6.0.13"
+        app.updateChecker := checker
+        app.updateUiTimer := ObjBindMethod(app, "RefreshUpdateStatus")
+        app.sidebarStatusBlock.GetPos(&x, &y, &width, &height)
+        app.RefreshUpdateStatus()
+        AssertEqual("", app.updateNotice.Value)
+        app.CheckForUpdates()
+        AssertEqual("Checking for updates...", app.updateNotice.Value)
+        for request in checker.requests
+            request.done := true
+        checker.Poll()
+        app.RefreshUpdateStatus()
+        AssertTrue(InStr(app.updateNotice.Value, "Update available: v1.6.0.14"))
+        AssertTrue(InStr(app.updateNotice.Value, "See About to install."))
+        app.TrackClientPossitions := !app.TrackClientPossitions
+        app.SaveJsonToFile(path)
+        AssertEqual("Changes saved.`nClose Settings to apply.", app.updateNotice.Value)
+        app.RefreshUpdateStatus()
+        AssertEqual("Changes saved.`nClose Settings to apply.", app.updateNotice.Value, "A repeated refresh must not restore an older update result.")
+        app.TrackClientPossitions := !app.TrackClientPossitions
+        app.CheckForUpdates()
+        app.SaveJsonToFile(path)
+        AssertEqual("Checking for updates...", app.updateNotice.Value, "The delayed save of an earlier edit must not replace a newer update check.")
+        checker.requests[3].ResponseText := '{"tag_name":"v1.6.0.13","draft":false,"prerelease":false}'
+        for request in checker.requests
+            request.done := true
+        checker.Poll()
+        app.RefreshUpdateStatus()
+        AssertEqual("No stable updates found.", app.updateNotice.Value, "Checking again replaces the save message with the result.")
+        for release in [app.programVersion, "1.6.0.12", ""] {
+            checker.releaseTag := release
+            checker.preReleaseTag := "99.0"
+            app.RefreshUpdateStatus()
+            AssertEqual("No stable updates found.", app.updateNotice.Value, "Pre-releases never trigger stable notifications.")
+        }
+        for status in ["Could not check. Try again.", "Check timed out. Try again."] {
+            checker.status := status
+            app.RefreshUpdateStatus()
+            AssertTrue(InStr(app.updateNotice.Value, "Update check unavailable."), "A failure must not claim there are no updates.")
+        }
+        checker.releaseTag := "1.6.0.14"
+        app.RefreshUpdateStatus()
+        AssertTrue(InStr(app.updateNotice.Value, "Update available: v1.6.0.14"), "A failed retry retains a known available update.")
+        app.sidebarStatusBlock.GetPos(&newX, &newY, &newWidth, &newHeight)
+        AssertEqual([x, y, width, height], [newX, newY, newWidth, newHeight], "All statuses use the same fixed footer space.")
+    } finally {
+        SetTimer(app.updateUiTimer, 0)
+        checker.Finish("Done")
+        app.Dispose()
+        for file in [path, path ".save.tmp"]
+            if FileExist(file)
+                FileDelete(file)
+    }
+}
