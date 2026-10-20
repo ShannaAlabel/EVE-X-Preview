@@ -1833,9 +1833,15 @@ Class Main_Class extends ThumbWindow {
             hwnd := WinExist(title " Ahk_exe exefile.exe")
         }
         if !IsSet(hwnd) || !hwnd {
-            This.debugToolTipText .= "ActivateEVEWindow: hwnd not found for " title "`n"
+            This.debugToolTipText .= "ActivateEVEWindow: hwnd not found for " (title ?? "") "`n"
             SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
             return
+        }
+        ; called with a raw EVE hwnd: look the title up for the position checks below
+        if !IsSet(title) {
+            try title := WinGetTitle("Ahk_id " hwnd)
+            catch
+                title := ""
         }
         ; return when the user tries to bring a window to foreground which is already in foreground 
         if (WinActive("Ahk_id " hwnd)) {
@@ -1849,7 +1855,7 @@ Class Main_Class extends ThumbWindow {
         ProgramLog.Add("Activation requested; target=" hwnd "; source=" This.pendingEVEActivation.source)
 
         If (DllCall("IsIconic", "UInt", hwnd)) {
-            if This.AlwaysMaximize || (This.TrackClientPossitions && This.ClientPossitions[title] && This.ClientPossitions[title]["IsMaximized"]) {
+            if This.AlwaysMaximize || This.ClientSavedMaximized(title) {
                 ; Maximize
                 This.ShowWindowAsync(hwnd, 3)
             }
@@ -1881,6 +1887,14 @@ Class Main_Class extends ThumbWindow {
         return true ; Activation requested; foreground focus may still be pending.
     }
 
+    ; True if client position tracking is on and the client was saved as maximized
+    ClientSavedMaximized(title) {
+        if !This.TrackClientPossitions || title = ""
+            return false
+        pos := This.ClientPossitions[title]
+        return pos && pos.Get("IsMaximized", 0)
+    }
+
     ;The function for the Internal Hotkey to bring a not minimized window in foreground 
     ActivateForgroundWindow(*) {
         ; 2 attempts for brining the window in foreground 
@@ -1890,7 +1904,7 @@ Class Main_Class extends ThumbWindow {
             }
 
                 ;If the user has selected to always maximize. this prevents wrong sized windows on heavy load.
-            if (This.AlwaysMaximize && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0) || ( This.TrackClientPossitions && This.ClientPossitions[WinGetTitle("Ahk_id " This.ActivateHwnd)]["IsMaximized"] && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0 )
+            if (This.AlwaysMaximize || This.ClientSavedMaximized(WinGetTitle("Ahk_id " This.ActivateHwnd))) && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0
                 This.ShowWindowAsync(This.ActivateHwnd, 3)
         }       
         This._ObserveEVEActivation(This._GetForegroundHwnd())
