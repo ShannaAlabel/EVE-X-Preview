@@ -607,6 +607,7 @@ DwmFaultStopsBatchTest() {
     baseline := LiveThumb.OBJ_COUNTER
     for fault in ["shadow", "registration", "update"] {
         app := DwmFaultFixture()
+        app.AutoPauseOnDwmFailure := 1 ; Off by default since v1.6.1.5.
         app.SlowThumbnailCreation := false
         app.previewQueue := PreviewStartupQueue()
         existing := Gui(), first := Gui(), second := Gui()
@@ -682,6 +683,7 @@ DwmCompositionPauseTest() {
     oldHidden := A_DetectHiddenWindows
     DetectHiddenWindows(true)
     app := DwmFaultFixture(), source := Gui()
+    app.AutoPauseOnDwmFailure := 1 ; Off by default since v1.6.1.5.
     app.SlowThumbnailCreation := false
     app.previewQueue := PreviewStartupQueue()
     baseline := LiveThumb.OBJ_COUNTER
@@ -739,27 +741,27 @@ DwmClosedSourceDoesNotPauseTest() {
     }
 }
 
-TestRunner.Register("DWM auto-pause defaults on, persists off, and follows the Other profile", DwmAutoPauseSettingTest)
+TestRunner.Register("DWM auto-pause defaults off, persists on, and follows the Other profile", DwmAutoPauseSettingTest)
 DwmAutoPauseSettingTest() {
     app := DwmFaultFixture()
-    AssertEqual(1, app.AutoPauseOnDwmFailure)
+    AssertEqual(0, app.AutoPauseOnDwmFailure, "New settings disable auto-pause since v1.6.1.5.")
     app._JSON["_Profiles"][app.ProfileOther]["Other"].Delete("AutoPauseOnDwmFailure")
-    AssertEqual(1, app.AutoPauseOnDwmFailure, "Older profiles enable the protection.")
-    app.AutoPauseOnDwmFailure := 0
+    AssertEqual(0, app.AutoPauseOnDwmFailure, "Profiles without the setting use the off default.")
+    app.AutoPauseOnDwmFailure := 1
     app._JSON := JsonMergeNoOverwrite(JSON.Load(default_JSON), JSON.Load(JSON.Dump(app._JSON)))
-    AssertEqual(0, app.AutoPauseOnDwmFailure, "Merging defaults must preserve an explicit opt-out.")
+    AssertEqual(1, app.AutoPauseOnDwmFailure, "Merging defaults must preserve an explicit opt-in.")
     previousProfile := app.ProfileOther
     app._JSON["_Profiles"]["DwmSettingTest"] := Map("Other", Map())
     app.ProfileOther := "DwmSettingTest"
-    AssertEqual(1, app.AutoPauseOnDwmFailure)
-    app.ProfileOther := previousProfile
     AssertEqual(0, app.AutoPauseOnDwmFailure)
+    app.ProfileOther := previousProfile
+    AssertEqual(1, app.AutoPauseOnDwmFailure)
     app.SetState()
     app.MainFrame := Gui()
     app.MainFrame.Group := Map()
     try {
         app.Other_Ctrl()
-        AssertEqual(0, app.MainFrame["AutoPauseOnDwmFailure"].Value)
+        AssertEqual(1, app.MainFrame["AutoPauseOnDwmFailure"].Value)
         app.MainFrame["SlowThumbnailCreation"].GetPos(, &slowY, , &slowH)
         app.MainFrame["AutoPauseOnDwmFailure"].GetPos(, &pauseY, , &pauseH)
         app.MainFrame["SwitchLangOnErr"].GetPos(, &languageY)

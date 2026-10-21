@@ -787,7 +787,7 @@ class Propertys extends TrayMenu {
     }
 
     AutoPauseOnDwmFailure {
-        get => This._JSON["_Profiles"][This.ProfileOther]["Other"].Get("AutoPauseOnDwmFailure", 1)
+        get => This._JSON["_Profiles"][This.ProfileOther]["Other"].Get("AutoPauseOnDwmFailure", 0)
         set => This._JSON["_Profiles"][This.ProfileOther]["Other"]["AutoPauseOnDwmFailure"] := value
     }
 
