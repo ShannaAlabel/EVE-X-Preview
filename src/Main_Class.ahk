@@ -572,7 +572,9 @@ Class Main_Class extends ThumbWindow {
                         ; Shows the Thumbnail on top of other thumbnails
                         if This.ShowThumbnailsAlwaysOnTop
                             WinSetAlwaysOnTop(1,This.ThumbWindows.%Ahwnd%["Window"].Hwnd )
-                        
+                        else
+                            This.RestackThumbnail(This.ThumbWindows.%Ahwnd%)
+
                         This.ShowActiveBorder(Ahwnd)
                         This.UpdateThumb_AfterActivation(, Ahwnd)
                         This.BorderActive := Ahwnd

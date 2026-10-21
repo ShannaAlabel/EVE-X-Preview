@@ -846,6 +846,52 @@ MinimizedPreviewSourceTest() {
     }
 }
 
+TestRunner.Register("Restacking a covered preview restores its overlays without raising it", PreviewRestackTest)
+PreviewRestackTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    app.HideThumbnailsOnLostFocus := false
+    app.DisabledFromGroupsEnabled := false, app.QuickGroupEnabled := false
+    app.ShowThumbnailsAlwaysOnTop := false ; Always-on-top previews are re-raised by WinSetAlwaysOnTop instead.
+    source := Gui(, "EVE - Restack source")
+    cover := Gui("+ToolWindow -Caption +E0x08000000", "Restack cover")
+    try {
+        source.Show("NoActivate w320 h200")
+        hwnd := source.Hwnd
+        app.EVE_WIN_Created(hwnd, "EVE - Restack source")
+        app.ShowThumb(hwnd, "Show")
+        thumb := app.ThumbWindows.%hwnd%
+        window := thumb["Window"].Hwnd
+        ; Raise only the preview, leaving its owned layers below it as after a relog.
+        DllCall("SetWindowPos", "Ptr", window, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x213)
+        AssertFalse(StackedAbove(thumb["TextOverlay"].Hwnd, window), "Test must reproduce a covered overlay.")
+        ; An unrelated window, such as the active client, then sits above the preview.
+        cover.Show("NoActivate x0 y0 w20 h20")
+        DllCall("SetWindowPos", "Ptr", cover.Hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+        AssertTrue(StackedAbove(cover.Hwnd, window), "Unrelated window must start above the preview.")
+        app.RestackThumbnail(thumb)
+        for key in ["TextOverlay", "Border", "EventBorder"]
+            if thumb.Has(key)
+                AssertTrue(StackedAbove(thumb[key].Hwnd, window), key " must be restacked above its preview.")
+        AssertTrue(StackedAbove(cover.Hwnd, window), "Restacking must not raise the preview over other windows.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        cover.Destroy()
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+
+    StackedAbove(a, b) {
+        h := b
+        while h := DllCall("GetWindow", "Ptr", h, "UInt", 3, "Ptr") ; GW_HWNDPREV
+            if h = a
+                return true
+        return false
+    }
+}
+
 TestRunner.Register("Hidden previews moved to a saved size relayout their text", HiddenPreviewTextLayoutTest)
 HiddenPreviewTextLayoutTest() {
     previousHidden := A_DetectHiddenWindows

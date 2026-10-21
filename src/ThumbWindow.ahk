@@ -730,6 +730,14 @@ Class ThumbWindow extends Propertys {
         ProgramLog.Count(visible ? "preview-shows" : "preview-hides")
     }
 
+    ; A recreated preview can end up above its own overlays after a relog, hiding
+    ; the name and system. Re-inserting the owner below its overlay makes Windows
+    ; restack every owned layer above it without lifting it over other apps.
+    RestackThumbnail(thumb) {
+        DllCall("SetWindowPos", "Ptr", thumb["Window"].Hwnd, "Ptr", thumb["TextOverlay"].Hwnd
+            , "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13) ; SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+    }
+
     ShowHideAllThumbnails(ShowOrHide) {
         for EvEHwnd, ThumbObj in This.ThumbWindows.OwnProps() {
             This.ShowThumb(EvEHwnd, ShowOrHide)
