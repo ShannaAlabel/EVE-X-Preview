@@ -7,11 +7,17 @@
 #Include "src/PreviewStartupQueue.ahk"
 #Include "src/NPCDatabase.ahk"
 #Include "src/DPSMeter.ahk"
+#Include "src/SystemColorManager.ahk"
+#Include "src/LogScanJob.ahk"
+#Include "src/GameLogDiscovery.ahk"
 #Include "src/Main_Class.ahk"
 #Include "src/ThumbWindow.ahk"
 #Include "src/TrayMenu.ahk"
 #Include "src/Propertys.ahk"
 #Include "src/Settings_Gui.ahk"
+#Include "src/ChangelogWindow.ahk"
+#Include "src/SimpleMarkdown.ahk"
+#Include "src/SettingsThumbnailPreview.ahk"
 #Include "src/LocalChatMonitor.ahk"
 
 if !IsSet(__EVE_X_PREVIEW_TESTING__)
@@ -31,7 +37,7 @@ if !__EVE_X_PREVIEW_TESTING__ {
 
     A_MaxHotKeysPerInterval := 10000 
 
-    ;@Ahk2Exe-Let U_version = 1.6.0.18
+    ;@Ahk2Exe-Let U_version = 1.6.1.6
     ;@Ahk2Exe-SetVersion %U_version%
     ;@Ahk2Exe-SetFileVersion %U_version%
     ;@Ahk2Exe-SetCopyright gonzo83+khivus
@@ -44,6 +50,8 @@ if !__EVE_X_PREVIEW_TESTING__ {
     ;@Ahk2Exe-AddResource icon.ico, 207  ; Replaces 'H on red'
     ;@Ahk2Exe-AddResource icon-suspend.ico, 208  ; Replaces 'S on red'
 
+    ;@Ahk2Exe-AddResource src/LogScanWorker.ahk, LogScanWorker
+    ;@Ahk2Exe-AddResource Changelog, Changelog
     ;@Ahk2Exe-SetMainIcon icon.ico
 
     if !(A_IsCompiled)
@@ -499,6 +507,12 @@ MigrateSettings(userObj, uver, dver) {
 
 ; Hanles unmanaged Errors
 Error_Handler(Thrown, Mode) {
+    if Thrown is MemoryError && Mode != "ExitApp" {
+        try ProgramLog.RecoverMemory()
+        ; OnError return 1 aborts the failed callback without the blocking dialog.
+        ; Do not continue the failed allocation with an invalid/empty result.
+        return 1
+    }
     try ProgramLog.Error(Thrown, "Unhandled " Mode)
     ; There we try to get right layout of keyboard
     if Thrown.Message == "Invalid key name." {

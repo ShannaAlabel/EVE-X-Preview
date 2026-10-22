@@ -11,6 +11,7 @@ class Propertys extends TrayMenu {
             if This.ThumbWindows.HasProp(hwnd) {
                 newtext := Value
                 if This.ThumbWindows.%hwnd%["Window"].Title != newtext {
+                    This.HideEventBorder(hwnd)
                     This.updateThumbnailEventText("", hwnd)
                     This.updateThumbnailSystemText("", hwnd)
                     This.updateThumbnailDPSText("", hwnd)
@@ -22,6 +23,12 @@ class Propertys extends TrayMenu {
     }
 
     Profiles => This._JSON["_Profiles"]
+
+    ; Profile activation belongs to the profile itself, independent of group overrides.
+    ProfileActivationHotkey {
+        get => This.Profiles[This.LastUsedProfile].Get("ActivationHotkey", "")
+        set => This.Profiles[This.LastUsedProfile]["ActivationHotkey"] := Trim(value, "`r`n `t")
+    }
 
 
     ;######################
@@ -190,6 +197,11 @@ class Propertys extends TrayMenu {
         set => This._JSON["_Profiles"][This.ProfileThumbnailsBehavior]["Thumbnails Behavior"]["ShiftThumbsForLoginScreen"] := value
     }
 
+    ShiftThumbsForLoggedInCharacters {
+        get => This._JSON["_Profiles"][This.ProfileThumbnailsBehavior]["Thumbnails Behavior"].Get("ShiftThumbsForLoggedInCharacters", 1)
+        set => This._JSON["_Profiles"][This.ProfileThumbnailsBehavior]["Thumbnails Behavior"]["ShiftThumbsForLoggedInCharacters"] := value
+    }
+
     ShiftThumbsCollisionCheck {
         get => This._JSON["_Profiles"][This.ProfileThumbnailsBehavior]["Thumbnails Behavior"]["ShiftThumbsCollisionCheck"]
         set => This._JSON["_Profiles"][This.ProfileThumbnailsBehavior]["Thumbnails Behavior"]["ShiftThumbsCollisionCheck"] := value
@@ -270,6 +282,14 @@ class Propertys extends TrayMenu {
     ShowClientHighlightBorder {
         get => This._JSON["_Profiles"][This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["ShowClientHighlightBorder"]
         set => This._JSON["_Profiles"][This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["ShowClientHighlightBorder"] := value
+    }
+
+    EventActiveBorderMode {
+        get {
+            mode := This.Profiles[This.ProfileThumbnailsVisuals]["Thumbnails Visuals"].Get("EventActiveBorderMode", 1)
+            return mode = 2 ? 2 : (mode = 3 ? 3 : 1)
+        }
+        set => This.Profiles[This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["EventActiveBorderMode"] := value = 2 ? 2 : (value = 3 ? 3 : 1)
     }
     ThumbnailTextFont {
         get => This._JSON["_Profiles"][This.ProfileThumbnailsVisuals]["Thumbnails Visuals"]["ThumbnailTextFont"]
@@ -753,9 +773,22 @@ class Propertys extends TrayMenu {
         set => This._JSON["_Profiles"][This.ProfileGameLogsMonitoring]["Game Logs Monitoring"]["systemTrackingEnabled"] := value
     }
 
+    systemColorsEnabled {
+        get => This._JSON["_Profiles"][This.ProfileGameLogsMonitoring]["Game Logs Monitoring"].Get("systemColorsEnabled", 0)
+        set {
+            This._JSON["_Profiles"][This.ProfileGameLogsMonitoring]["Game Logs Monitoring"]["systemColorsEnabled"] := value
+            This.RefreshThumbnailSystemColors()
+        }
+    }
+
     SlowThumbnailCreation {
         get => This._JSON["_Profiles"][This.ProfileOther]["Other"].Get("SlowThumbnailCreation", 0)
         set => This._JSON["_Profiles"][This.ProfileOther]["Other"]["SlowThumbnailCreation"] := value
+    }
+
+    AutoPauseOnDwmFailure {
+        get => This._JSON["_Profiles"][This.ProfileOther]["Other"].Get("AutoPauseOnDwmFailure", 0)
+        set => This._JSON["_Profiles"][This.ProfileOther]["Other"]["AutoPauseOnDwmFailure"] := value
     }
 
     chatLogsDirectory {
@@ -967,16 +1000,19 @@ class Propertys extends TrayMenu {
         Result := MsgBox("Do you want to use the current settings for the new profile?", "Copy Settings?", "YesNo")
 
         if Result = "Yes" {
-            This._JSON["_Profiles"][Obj.value] := JSON.Load(FileRead("EVE-X-Preview.json"))["_Profiles"][This.LastUsedProfile]
+            This._JSON["_Profiles"][Obj.value] := DeepClone(This.Profiles[This.LastUsedProfile])
 
             if This.LastUsedProfile = "Default" ; Reset global groups from default profile
                 for k, v in This._JSON["_Profiles"][Obj.value]["Other"]["Global_Groups"]
                     This._JSON["_Profiles"][Obj.value]["Other"]["Global_Groups"][k] := 0
         }
         else if Result = "No"
-            This._JSON["_Profiles"][Obj.value] := This.default_JSON["_Profiles"]["Default"]
+            This._JSON["_Profiles"][Obj.value] := DeepClone(This.default_JSON["_Profiles"]["Default"])
         else
             Return 0
+
+        ; Copy settings without assigning the source profile's shortcut to the new profile.
+        This.Profiles[Obj.value]["ActivationHotkey"] := ""
 
         FileDelete("EVE-X-Preview.json")
         FileAppend(JSON.Dump(This._JSON, , "    "), "EVE-X-Preview.json")
@@ -1002,7 +1038,7 @@ class Propertys extends TrayMenu {
             return
         }
 
-        This._JSON["_Profiles"][Obj.value] := JSON.Load(FileRead("EVE-X-Preview.json"))["_Profiles"][This.LastUsedProfile]
+        This._JSON["_Profiles"][Obj.value] := This.Profiles[This.LastUsedProfile]
         This._JSON["_Profiles"].Delete(This.LastUsedProfile)
 
         This.SelectProfile_DDL.Delete()

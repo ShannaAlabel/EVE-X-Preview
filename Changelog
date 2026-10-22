@@ -1,3 +1,84 @@
+# v1.6.1.6
+
+#10, thanks to @thelonewolfk
+
+### Changed
+* DWM auto-pause consistently defaults to off for profiles without a saved preference.
+
+### Fixed
+* Preview text follows saved thumbnail sizes, and overlays are restacked after client activation.
+* Minimized clients get previews at startup without being restored; maximized and borderless images remain uncropped during preview resizing.
+* Group and previous-window activation safely handle clients with missing saved positions.
+
+# v1.6.1.5
+
+### Added
+* Offline Markdown changelog in About, shown automatically after updates.
+* Compact sidebar status for saved settings and update checks.
+
+### Changed
+* DWM auto-pause is now disabled by default.
+
+### Fixed
+* Client position restoration no longer blocks thumbnail startup or minimized-client activation.
+* Consistent Settings spacing. The changelog always opens at the top.
+* Updater cleanup no longer delays startup.
+
+# v1.6.1.4
+
+### Added
+* Optional WAV/MP3 event sounds, with a shared library, playback tests and bulk event assignment. Sounds work even when visual alerts or thumbnails are hidden.
+* Master, per-sound and per-event volume controls from 0 to 300%, without changing Windows volume.
+* Up to 16 simultaneous event sounds and a configurable repeat timeout. Defaults: one sound at a time and 2000 ms between repeats of the same file.
+* Test Thumbnail in the Settings sidebar: move, resize and preview fonts, colors, borders and sample overlays without affecting real clients or saved positions.
+* Color pickers beside Settings color fields.
+* Inline hotkey recording and duplicate-binding warnings.
+* Separate event and active border rings, with a choice of layer order or the existing combined border.
+
+### Improved
+* Volume sliders use 5% steps; adjacent fields accept exact percentages.
+* Clearer Monitored Events rows, with aligned labels, options, colors and sound buttons.
+* Window-switching hotkeys work while additional modifier keys are held.
+
+### Fixed
+* Double borders no longer overlap thumbnail text.
+* Settings panels no longer overlap or clip at display scaling such as 125%.
+* Removing sounds or changing event settings while Test Thumbnail is open no longer causes errors.
+* Diagnostic logging recovers from memory shortages. Access-denied foreground lookups no longer flood the log.
+
+# v1.6.1.3
+
+### Added
+* Profile activation hotkeys in Settings, available even when EVE is closed.
+* Independent shifting for logged-in thumbnails without saved positions. Saved positions keep priority.
+* Optional system-name colors: characters in the same system share a color. Disabled by default.
+
+### Improved
+* Settings are saved before a required restart.
+* Copying a profile keeps settings independent and clears its activation hotkey. Renaming preserves current edits and the hotkey.
+
+### Fixed
+* Local-chat discovery no longer fails when background workers replace files being read by the app.
+
+# v1.6.1.2
+
+### Fixed
+* Login-screen thumbnails shift on the configured monitor, including secondary monitors with negative coordinates. Off-screen start positions are clamped to the nearest monitor.
+* Corrected vertical-first shifting directions (#9, thanks to @thelonewolfk).
+
+# v1.6.1.1
+
+### Improved
+* Game and Local-chat log discovery runs in the background, keeping Settings, tray actions and thumbnail movement responsive during large scans.
+* Cached log headers and shared session indexes reduce repeated scanning. New sessions are detected without detaching quiet sessions.
+* Bounded live log reads prevent long sessions from freezing the app. Thumbnail dragging pauses timers until release and avoids redundant moves.
+
+# v1.6.1.0
+
+### Added
+* Auto-Pause on DWM Failure in Other, enabled by default. Live previews pause after a DWM error or Windows composition change, while hotkeys remain available.
+* About shows the pause reason. Resume previews manually when the display is stable.
+
 # v1.6.0
 
 ### Added

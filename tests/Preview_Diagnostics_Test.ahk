@@ -336,6 +336,105 @@ PreviewRecoveryIsolationTest() {
     }
 }
 
+; Record window placement requests while keeping test sources hidden.
+class PreviewClientPositionFixture extends PreviewLifecycleFixture {
+    placements := []
+    showCommands := []
+    SetWindowPlacement(hwnd := "", x := "", y := "", w := "", h := "", action := 9) {
+        this.placements.Push([hwnd, x, y, w, h, action])
+    }
+    ShowWindowAsync(hwnd, command := 9) {
+        this.showCommands.Push([hwnd, command])
+    }
+    _GetForegroundHwnd() {
+        return 0
+    }
+    _ObserveEVEActivation(*) {
+    }
+    hitThis() {
+    }
+}
+
+TestRunner.Register("Position tracking starts previews with saved or missing positions in both modes", PreviewClientPositionStartupTest)
+PreviewClientPositionStartupTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        for slow in [false, true] {
+            for saved in [false, true] {
+                app := PreviewClientPositionFixture()
+                source := Gui(, "EVE - Position startup test")
+                try {
+                    source.Show("Hide w160 h100")
+                    hwnd := source.Hwnd
+                    title := WinGetTitle("ahk_id " hwnd)
+                    app.TrackClientPossitions := true
+                    app.previewQueue := PreviewStartupQueue(0, slow)
+                    if saved
+                        app.ClientPossitions[title] := [100, 120, 640, 480, 0]
+                    app.QueuePreview(hwnd, title)
+                    app.previewQueue.items[hwnd].stableAt -= 500
+                    app.ProcessPreviewQueue([hwnd])
+                    if slow && saved {
+                        AssertFalse(app.ThumbWindows.HasProp(hwnd), "Slow mode lets restored sources settle.")
+                        AssertTrue(app.previewQueue.items[hwnd].positionRestored)
+                        app.previewQueue.items[hwnd].stableAt -= 500
+                        app.previewQueue.nextAt := 0
+                        app.ProcessPreviewQueue([hwnd])
+                    }
+                    AssertTrue(app.ThumbWindows.HasProp(hwnd), "Position tracking must not block startup.")
+                    AssertEqual(0, app.previewQueue.items.Count)
+                    AssertEqual(saved ? 1 : 0, app.placements.Length, "Only saved sources are restored, once.")
+                    if saved
+                        AssertEqual([hwnd, 100, 120, 640, 480, 4], app.placements[1])
+                    AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+                } finally {
+                    app.DisposePreview(source.Hwnd)
+                    SetTimer(app.debugToolTipMethod, 0)
+                    source.Destroy()
+                }
+                AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            }
+        }
+    } finally {
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
+TestRunner.Register("Minimized client activation honors tracked positions and missing entries", PreviewClientPositionActivationTest)
+PreviewClientPositionActivationTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewClientPositionFixture()
+    source := Gui(, "EVE - Position activation test")
+    preview := Gui()
+    try {
+        source.Show("Hide w160 h100")
+        hwnd := source.Hwnd
+        title := WinGetTitle("ahk_id " hwnd)
+        app.ThumbHwnd_EvEHwnd[preview.Hwnd] := "ahk_id " hwnd
+        ; Exercise the minimized branch without showing or focusing a window.
+        WinSetStyle("+0x20000000", "ahk_id " hwnd)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd))
+        app.TrackClientPossitions := true
+        app.MinimizeInactiveClients := false
+        app.AlwaysMaximize := false
+        app.WinActivationHistory := []
+        for state in ["missing", "normal", "maximized"] {
+            if state != "missing"
+                app.ClientPossitions[title] := [100, 120, 640, 480, state = "maximized"]
+            AssertTrue(app.ActivateEVEWindow(preview.Hwnd))
+            AssertEqual([hwnd, state = "maximized" ? 3 : 9], app.showCommands[A_Index])
+        }
+    } finally {
+        SetTimer(app.debugToolTipMethod, 0)
+        source.Destroy()
+        preview.Destroy()
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
 TestRunner.Register("Fast previews have no startup waits and slow mode persists", FastPreviewModeTest)
 FastPreviewModeTest() {
     q := PreviewStartupQueue(0)
@@ -449,6 +548,439 @@ PreviewLifecycleTest() {
     } finally {
         app.DisposePreview(source.Hwnd)
         SetTimer(app.debugToolTipMethod, 0)
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+}
+
+class DwmFaultFixture extends PreviewLifecycleFixture {
+    fault := ""
+    registrationAttempts := 0
+    updatesAfterPause := 0
+    nativeCallsAtPause := 0
+    shadowCalls := 0
+    ExtendThumbnailFrame(hwnd) {
+        this.shadowCalls += 1
+        if this.fault = "shadow"
+            return 0x80070006
+        return super.ExtendThumbnailFrame(hwnd)
+    }
+    CreateLiveThumbnail(hwnd, destination) {
+        return DwmFaultLiveThumb(hwnd, destination, this)
+    }
+}
+
+class DwmFaultLiveThumb extends LiveThumb {
+    RegisterThumbnail(source, destination, &id) {
+        this.Controller.registrationAttempts += 1
+        if this.Controller.fault = "registration-once" {
+            this.Controller.fault := ""
+            return 0xD0000701
+        }
+        if this.Controller.fault = "registration"
+            return 0xD0000701
+        hr := super.RegisterThumbnail(source, destination, &id)
+        if this.Controller.fault = "pause-during-registration" {
+            this.Controller.nativeCallsAtPause := this.Controller.previewDwmCalls
+            this.Controller.ToggleLivePreviews()
+            this.Controller.ToggleLivePreviews() ; Must not resume into this call.
+        }
+        return hr
+    }
+    UpdateProperties() {
+        if this.Controller.livePreviewsPaused
+            this.Controller.updatesAfterPause += 1
+        if this.Controller.fault = "update-once" {
+            this.Controller.fault := ""
+            return 0xD0000701
+        }
+        if this.Controller.fault = "update"
+            return 0xD0000701
+        return super.UpdateProperties()
+    }
+}
+
+TestRunner.Register("Logged DWM failures stop the batch and release all live previews", DwmFaultStopsBatchTest)
+DwmFaultStopsBatchTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    for fault in ["shadow", "registration", "update"] {
+        app := DwmFaultFixture()
+        app.AutoPauseOnDwmFailure := 1 ; Off by default since v1.6.1.5.
+        app.SlowThumbnailCreation := false
+        app.previewQueue := PreviewStartupQueue()
+        existing := Gui(), first := Gui(), second := Gui()
+        try {
+            existing.Show("Hide w160 h100"), first.Show("Hide w160 h100"), second.Show("Hide w160 h100")
+            app.QueuePreview(existing.Hwnd, "Existing")
+            app.ProcessPreviewQueue([existing.Hwnd])
+            AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+            app.DisabledChars[existing.Hwnd] := "Existing"
+            app.fault := fault
+            attempts := app.registrationAttempts
+            app.QueuePreview(first.Hwnd, "Failing"), app.QueuePreview(second.Hwnd, "Must not start")
+            app.ProcessPreviewQueue([existing.Hwnd, first.Hwnd, second.Hwnd])
+            AssertTrue(app.livePreviewsPaused)
+            AssertTrue(InStr(app.LivePreviewStatus(), fault = "shadow" ? "0x80070006" : "0xD0000701"))
+            AssertEqual(attempts + (fault = "shadow" ? 0 : 1), app.registrationAttempts, "Only the first failure may touch DWM.")
+            AssertEqual(0, app.previewQueue.items.Count)
+            AssertFalse(app.ThumbWindows.HasProp(second.Hwnd))
+            AssertEqual(0, app.previewDwmCalls)
+            app.ReleasePausedLivePreviews()
+            AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            AssertTrue(app.DisabledChars.Has(existing.Hwnd), "Safety pause retains group state.")
+            app.ProcessPreviewQueue([existing.Hwnd, first.Hwnd, second.Hwnd])
+            AssertEqual(0, app.previewQueue.items.Count, "A safety pause must not retry on the next poll.")
+            AssertEqual(0, app.updatesAfterPause)
+            app.fault := ""
+            app.ToggleLivePreviews()
+            app.ProcessPreviewQueue([existing.Hwnd])
+            AssertFalse(app.livePreviewsPaused)
+            AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER, "Manual resume restores live previews.")
+        } finally {
+            app.CloseLivePreviews("test", 0)
+            for source in [existing, first, second] {
+                app.DisposePreview(source.Hwnd)
+                source.Destroy()
+            }
+            SetTimer(app.debugToolTipMethod, 0)
+        }
+    }
+    DetectHiddenWindows(oldHidden)
+}
+
+TestRunner.Register("Pause during registration cancels its result and prevents an interrupted resume", DwmInterruptedRegistrationTest)
+DwmInterruptedRegistrationTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := DwmFaultFixture(), source := Gui()
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        source.Show("Hide w160 h100")
+        app.fault := "pause-during-registration"
+        beforeWindows := WinGetList("ahk_pid " ProcessExist()).Length
+        AssertThrows(() => app.Create_Thumbnail(source.Hwnd, "Interrupted"), "interrupted by pause")
+        AssertEqual(1, app.nativeCallsAtPause)
+        AssertTrue(app.livePreviewsPaused)
+        AssertEqual(0, app.previewDwmCalls)
+        AssertEqual(baseline, LiveThumb.OBJ_COUNTER, "A successful result arriving after pause must be unregistered.")
+        AssertEqual(beforeWindows, WinGetList("ahk_pid " ProcessExist()).Length)
+        AssertEqual(0, app.updatesAfterPause)
+        app.fault := ""
+        app.ToggleLivePreviews()
+        AssertFalse(app.livePreviewsPaused)
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        source.Destroy()
+        SetTimer(app.debugToolTipMethod, 0)
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
+TestRunner.Register("Composition bursts pause once, defer native cleanup, and retain the About reason", DwmCompositionPauseTest)
+DwmCompositionPauseTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := DwmFaultFixture(), source := Gui()
+    app.AutoPauseOnDwmFailure := 1 ; Off by default since v1.6.1.5.
+    app.SlowThumbnailCreation := false
+    app.previewQueue := PreviewStartupQueue()
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        app.MainFrame := Gui()
+        app.MainFrame.Add("Button", "vpausePreviewsBtn", "Pause Live Previews")
+        app.MainFrame.Add("Text", "vlivePreviewsStatus w600 r2", "")
+        source.Show("Hide w160 h100")
+        app.QueuePreview(source.Hwnd, "Composition source")
+        app.ProcessPreviewQueue([source.Hwnd])
+        app.BeginPreviewDwmCall(app.previewGeneration)
+        generation := app.previewGeneration
+        ProgramLog.DisplayNotificationAt.Clear()
+        previousNotifications := StrSplit(ProgramLog.Text, "Windows display notification=0x31E").Length
+        loop 30 {
+            app.OnDwmCompositionChanged(0, 0, 0x031E, source.Hwnd)
+            ProgramLog.DisplayChanged(0, 0, 0x031E, source.Hwnd)
+        }
+        AssertEqual(generation + 1, app.previewGeneration)
+        AssertEqual(previousNotifications + 1, StrSplit(ProgramLog.Text, "Windows display notification=0x31E").Length, "A broadcast burst should produce one diagnostic.")
+        AssertEqual("Resume Live Previews", app.MainFrame["pausePreviewsBtn"].Text)
+        AssertTrue(InStr(app.MainFrame["livePreviewsStatus"].Text, "composition changed"))
+        app.ReleasePausedLivePreviews()
+        AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER, "Do not unregister inside an active DWM call.")
+        app.ToggleLivePreviews()
+        AssertTrue(app.livePreviewsPaused)
+        app.EndPreviewDwmCall()
+        ; Resume before the deferred timer fires must still release old registrations.
+        app.ToggleLivePreviews()
+        AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+        app.ProcessPreviewQueue([source.Hwnd])
+        AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+        AssertEqual(2, app.shadowCalls, "Resume must reapply retained window frames after composition changes.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        app.MainFrame.Destroy(), source.Destroy()
+        SetTimer(app.debugToolTipMethod, 0)
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
+TestRunner.Register("A closed source does not trigger a compositor safety pause", DwmClosedSourceDoesNotPauseTest)
+DwmClosedSourceDoesNotPauseTest() {
+    app := DwmFaultFixture(), source := Gui(), destination := Gui()
+    sourceHwnd := source.Hwnd
+    source.Destroy()
+    try {
+        AssertThrows(() => LiveThumb(sourceHwnd, destination.Hwnd, app), "DwmRegisterThumbnail")
+        AssertFalse(app.livePreviewsPaused)
+        AssertEqual(0, app.previewDwmCalls)
+    } finally {
+        destination.Destroy()
+        app.CloseLivePreviews("test", 0)
+    }
+}
+
+TestRunner.Register("DWM auto-pause defaults off, persists on, and follows the Other profile", DwmAutoPauseSettingTest)
+DwmAutoPauseSettingTest() {
+    app := DwmFaultFixture()
+    AssertEqual(0, app.AutoPauseOnDwmFailure, "New settings disable auto-pause since v1.6.1.5.")
+    app._JSON["_Profiles"][app.ProfileOther]["Other"].Delete("AutoPauseOnDwmFailure")
+    AssertEqual(0, app.AutoPauseOnDwmFailure, "Profiles without the setting use the off default.")
+    app.AutoPauseOnDwmFailure := 1
+    app._JSON := JsonMergeNoOverwrite(JSON.Load(default_JSON), JSON.Load(JSON.Dump(app._JSON)))
+    AssertEqual(1, app.AutoPauseOnDwmFailure, "Merging defaults must preserve an explicit opt-in.")
+    previousProfile := app.ProfileOther
+    app._JSON["_Profiles"]["DwmSettingTest"] := Map("Other", Map())
+    app.ProfileOther := "DwmSettingTest"
+    AssertEqual(0, app.AutoPauseOnDwmFailure)
+    app.ProfileOther := previousProfile
+    AssertEqual(1, app.AutoPauseOnDwmFailure)
+    app.SetState()
+    app.MainFrame := Gui()
+    app.MainFrame.Group := Map()
+    try {
+        app.Other_Ctrl()
+        AssertEqual(1, app.MainFrame["AutoPauseOnDwmFailure"].Value)
+        app.MainFrame["SlowThumbnailCreation"].GetPos(, &slowY, , &slowH)
+        app.MainFrame["AutoPauseOnDwmFailure"].GetPos(, &pauseY, , &pauseH)
+        app.MainFrame["SwitchLangOnErr"].GetPos(, &languageY)
+        AssertTrue(pauseY >= slowY + slowH && pauseY + pauseH <= languageY)
+        app.MainFrame["UpdateThumbnails"].GetPos(, &bottom, , &buttonHeight)
+        AssertTrue(bottom + buttonHeight <= app.guiHeight - 10)
+    } finally {
+        app.MainFrame.Destroy()
+    }
+}
+
+TestRunner.Register("Disabled DWM auto-pause retains previews and independent retries", DwmAutoPauseDisabledTest)
+DwmAutoPauseDisabledTest() {
+    oldHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        for fault in ["shadow", "registration-once", "update-once"] {
+            app := DwmFaultFixture(), first := Gui(), second := Gui()
+            app.SlowThumbnailCreation := false
+            app.previewQueue := PreviewStartupQueue()
+            app.AutoPauseOnDwmFailure := 0
+            try {
+                first.Show("Hide w160 h100"), second.Show("Hide w160 h100")
+                app.fault := fault
+                app.QueuePreview(first.Hwnd, "First"), app.QueuePreview(second.Hwnd, "Second")
+                failingHwnd := app.previewQueue.Next()
+                healthyHwnd := failingHwnd = first.Hwnd ? second.Hwnd : first.Hwnd
+                app.ProcessPreviewQueue([first.Hwnd, second.Hwnd])
+                AssertFalse(app.livePreviewsPaused)
+                AssertTrue(app.ThumbWindows.HasProp(healthyHwnd), "A failure must not stop the next ready source: " fault)
+                if fault != "shadow" {
+                    AssertEqual(1, app.previewQueue.items[failingHwnd].failures)
+                    app.previewQueue.items[failingHwnd].retryAt := 0
+                    app.ProcessPreviewQueue([first.Hwnd, second.Hwnd])
+                }
+                AssertEqual(baseline + 2, LiveThumb.OBJ_COUNTER)
+                app.OnDwmCompositionChanged()
+                AssertFalse(app.livePreviewsPaused, "Composition notifications honor the opt-out.")
+                AssertEqual(baseline + 2, LiveThumb.OBJ_COUNTER)
+                app.ToggleLivePreviews()
+                AssertTrue(app.livePreviewsPaused, "Manual pause stays available.")
+                AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            } finally {
+                app.CloseLivePreviews("test", 0)
+                app.DisposePreview(first.Hwnd), app.DisposePreview(second.Hwnd)
+                first.Destroy(), second.Destroy()
+                SetTimer(app.debugToolTipMethod, 0)
+            }
+        }
+    } finally {
+        DetectHiddenWindows(oldHidden)
+    }
+}
+
+TestRunner.Register("Minimized sources get previews at their restored size without being restored", MinimizedPreviewSourceTest)
+MinimizedPreviewSourceTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    source := Gui("+Resize", "Minimized preview source")
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        source.Show("NoActivate w320 h200")
+        hwnd := source.Hwnd
+        WinGetClientPos(,, &restoredW, &restoredH, "ahk_id " hwnd)
+        WinMinimize("ahk_id " hwnd)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Source must start minimized.")
+        app.PreviewSourceSize(hwnd, &w, &h)
+        AssertEqual(restoredW, w, "Minimized width must come from the restored placement.")
+        AssertEqual(restoredH, h, "Minimized height must come from the restored placement.")
+        app.QueuePreview(hwnd, "Minimized preview source")
+        app.previewQueue.nextAt := A_TickCount
+        app.previewQueue.items[hwnd].stableAt := A_TickCount - 1000
+        app.ProcessPreviewQueue([hwnd])
+        AssertTrue(app.ThumbWindows.HasProp(hwnd), "Minimized source must create a preview without being restored.")
+        AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Preview startup must leave the source minimized.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+}
+
+TestRunner.Register("Maximized sources retain their full image when minimized before or after preview startup", MaximizedMinimizedPreviewTest)
+MaximizedMinimizedPreviewTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        for options in ["+Resize", "-Caption +Resize"] {
+            for previewBeforeMinimize in [false, true] {
+                app := PreviewLifecycleFixture()
+                source := Gui(options, "Maximized minimized preview source")
+                try {
+                    source.Show("NoActivate w320 h200")
+                    hwnd := source.Hwnd
+                    WinMaximize("ahk_id " hwnd)
+                    WinGetClientPos(,, &maxW, &maxH, "ahk_id " hwnd)
+                    AssertTrue(maxW > 320 && maxH > 200, "Source must actually be maximized.")
+                    if previewBeforeMinimize
+                        app.EVE_WIN_Created(hwnd, source.Title)
+                    WinMinimize("ahk_id " hwnd)
+                    if !previewBeforeMinimize {
+                        app.QueuePreview(hwnd, source.Title)
+                        app.previewQueue.nextAt := 0
+                        app.previewQueue.items[hwnd].stableAt := A_TickCount - 1000
+                        app.ProcessPreviewQueue([hwnd])
+                    }
+                    AssertTrue(app.ThumbWindows.HasProp(hwnd), "A minimized maximized source must get a preview.")
+                    thumb := app.ThumbWindows.%hwnd%
+                    CheckFullSource(thumb["Thumbnail"], maxW, maxH)
+                    for resizeAll in [false, true] {
+                        width := resizeAll ? 260 : 240, height := resizeAll ? 170 : 150
+                        WinMove(,, width, height, thumb["Window"].Hwnd)
+                        if resizeAll
+                            app.Update_Thumb()
+                        else
+                            app.Update_Thumb(false, thumb["Window"].Hwnd)
+                        AssertEqual([0, 0, width, height], thumb["Thumbnail"].Destination, "Minimized previews must still resize.")
+                        CheckFullSource(thumb["Thumbnail"], maxW, maxH)
+                        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Preview work must leave the source minimized.")
+                    }
+                } finally {
+                    app.DisposePreview(source.Hwnd)
+                    source.Destroy()
+                }
+                AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            }
+        }
+    } finally {
+        DetectHiddenWindows(previousHidden)
+    }
+
+    CheckFullSource(live, width, height) {
+        crop := live.Source
+        AssertTrue((crop[3] = 0 && crop[4] = 0) || (crop[3] >= width && crop[4] >= height),
+            "The maximized image must not be cropped to the smaller normal window rectangle.")
+        AssertEqual(1, live.SourceClientAreaOnly, "The full image must still exclude the window frame.")
+    }
+}
+
+TestRunner.Register("Restacking a covered preview restores its overlays without raising it", PreviewRestackTest)
+PreviewRestackTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    app.HideThumbnailsOnLostFocus := false
+    app.DisabledFromGroupsEnabled := false, app.QuickGroupEnabled := false
+    app.ShowThumbnailsAlwaysOnTop := false ; Always-on-top previews are re-raised by WinSetAlwaysOnTop instead.
+    source := Gui(, "EVE - Restack source")
+    cover := Gui("+ToolWindow -Caption +E0x08000000", "Restack cover")
+    try {
+        source.Show("NoActivate w320 h200")
+        hwnd := source.Hwnd
+        app.EVE_WIN_Created(hwnd, "EVE - Restack source")
+        app.ShowThumb(hwnd, "Show")
+        thumb := app.ThumbWindows.%hwnd%
+        window := thumb["Window"].Hwnd
+        ; Raise only the preview, leaving its owned layers below it as after a relog.
+        DllCall("SetWindowPos", "Ptr", window, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x213)
+        AssertFalse(StackedAbove(thumb["TextOverlay"].Hwnd, window), "Test must reproduce a covered overlay.")
+        ; An unrelated window, such as the active client, then sits above the preview.
+        cover.Show("NoActivate x0 y0 w20 h20")
+        DllCall("SetWindowPos", "Ptr", cover.Hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+        AssertTrue(StackedAbove(cover.Hwnd, window), "Unrelated window must start above the preview.")
+        app.RestackThumbnail(thumb)
+        for key in ["TextOverlay", "Border", "EventBorder"]
+            if thumb.Has(key)
+                AssertTrue(StackedAbove(thumb[key].Hwnd, window), key " must be restacked above its preview.")
+        AssertTrue(StackedAbove(cover.Hwnd, window), "Restacking must not raise the preview over other windows.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        cover.Destroy()
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+
+    StackedAbove(a, b) {
+        h := b
+        while h := DllCall("GetWindow", "Ptr", h, "UInt", 3, "Ptr") ; GW_HWNDPREV
+            if h = a
+                return true
+        return false
+    }
+}
+
+TestRunner.Register("Hidden previews moved to a saved size relayout their text", HiddenPreviewTextLayoutTest)
+HiddenPreviewTextLayoutTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    source := Gui(, "Hidden layout source")
+    thumb := 0
+    try {
+        source.Show("Hide w160 h100")
+        thumb := app.Create_Thumbnail(source.Hwnd, "Hidden layout source")
+        overlay := thumb["TextOverlay"]
+        AssertFalse(DllCall("IsWindowVisible", "Ptr", overlay.Hwnd), "Overlay must still be hidden when moved.")
+        start := Map()
+        for key in ["x", "y", "width", "height"]
+            start[key] := Integer(app.ThumbnailStartLocation[key])
+        for size in [[start["width"] * 2, start["height"] * 2], [Round(start["width"] / 2), Round(start["height"] / 2)]] {
+            app.ThumbMove(start["x"], start["y"], size[1], size[2], thumb)
+            overlay.GetClientPos(,, &w, &h)
+            AssertEqual(w, overlay.TextLayoutWidth, "Layout width must follow the moved overlay.")
+            AssertEqual(h, overlay.TextLayoutHeight, "Layout height must follow the moved overlay.")
+            overlay["OverlayText"].GetPos(&nx,, &nw)
+            AssertTrue(nx + nw <= w, "Name must fit inside the moved overlay.")
+            overlay["EventText"].GetPos(, &ey,, &eh)
+            AssertTrue(ey + eh <= h, "Bottom utility line must stay inside the moved overlay.")
+        }
+    } finally {
+        if thumb
+            for key, obj in thumb
+                try key = "Thumbnail" ? obj.Close() : obj.Destroy()
         source.Destroy()
         DetectHiddenWindows(previousHidden)
     }

@@ -1,8 +1,11 @@
 ﻿#Include "UpdateChecker.ahk"
 
-Class Settings_Gui {
+#Include "SoundSettings.ahk"
+
+Class Settings_Gui extends SoundSettingsGui {
 
     CheckForUpdates() {
+        This.BeginSidebarUpdateStatus()
         This.updateChecker.Start(true)
         SetTimer(This.updateUiTimer, 200)
         This.RefreshUpdateStatus()
@@ -14,7 +17,18 @@ Class Settings_Gui {
         This.latestReleaseTag := checker.releaseTag
         This.latestPreReleaseTag := checker.preReleaseTag
         newer := UpdateChecker.IsNewer(checker.releaseTag, This.programVersion)
-        This.updateNotice.Value := newer ? "Update available: v" checker.releaseTag "`nSee About to install." : ""
+        if checker.busy
+            notice := "Checking for updates..."
+        else if newer
+            notice := "Update available: v" checker.releaseTag "`nSee About to install."
+        else if checker.status = "Updates checked."
+            notice := "No stable updates found."
+        else if checker.status = "Not checked yet."
+            notice := "Updates not checked yet."
+        else
+            notice := "Update check unavailable.`nTry again in About."
+        if This.HasOwnProp("sidebarStatusOwner") && This.sidebarStatusOwner = "update"
+            This.SetSidebarStatus(notice)
         This.MainFrame["latestReleaseVersion"].Value := checker.releaseTag != "" ? "v" checker.releaseTag : "unknown"
         This.MainFrame["latestPreReleaseVersion"].Value := checker.preReleaseTag != "" ? "v" checker.preReleaseTag : "unknown"
         This.MainFrame["UpdateStatus"].Value := checker.status = "Updates checked." ? (newer ? "Update available." : "No newer stable release.") : checker.status
@@ -56,28 +70,103 @@ Class Settings_Gui {
         This.Other_Ctrl()
         This.About_Ctrl()
 
+        This.InitHotkeyHelpers()
+        This.InitColorPickers()
+
         This._Button_Load()
         ControlClick(This.firstBtn)
+        This.ResetSidebarStatus()
 
         This.S_Gui.OnEvent("Close", (*) => GuiDestroy())
 
         GuiDestroy(*) {
             ProgramLog.Add("Settings closed; restart required=" This.NeedRestart)
             SetTimer(This.updateUiTimer, 0)
+            This.StopHotkeyHelpers()
+            This.StopColorPickers()
+            This.CloseEventSoundDialog()
+            This.StopTestThumbnail()
+            This.sidebarStatusHwnd := 0
             This.S_Gui.Destroy()
-            if (This.NeedRestart)
+            if (This.NeedRestart) {
+                SetTimer(This.Save_Settings_Delay_Timer, 0)
+                This.SaveJsonToFile()
                 Reload()
+            }
         }
 
         This.S_Gui.Show(Format("w{} h{} Center", This.guiWidth, This.guiHeight))
         This.Sidebar.Show(Format("x{} y{} w{} h{}", 0, 0, This.sidebarW, This.guiHeight))
-        This.MainFrame.Show(Format("x{} y{} w{} h{}", This.sidebarW, 0, This.contentW - 10, This.guiHeight - 10))
+        This.ShowSettingsContent()
         if !This.HasOwnProp("updateChecker")
             This.updateChecker := UpdateChecker()
+        This.BeginSidebarUpdateStatus()
         This.updateChecker.Start()
         This.updateUiTimer := ObjBindMethod(This, "RefreshUpdateStatus")
         SetTimer(This.updateUiTimer, 200)
         This.RefreshUpdateStatus()
+    }
+
+    ResetSidebarStatus() {
+        This.sidebarStatusHwnd := This.S_Gui.Hwnd
+        This.sidebarSettingsSnapshot := JSON.Dump(This._JSON, , "    ")
+        This.sidebarStatusOwner := ""
+        This.updateNotice.Value := ""
+        This.updateNotice.Visible := false
+        This.sidebarStatusBlock.Visible := false
+    }
+
+    SetSidebarStatus(message) {
+        if !This.HasOwnProp("sidebarStatusHwnd") || !This.sidebarStatusHwnd
+            || !DllCall("IsWindow", "Ptr", This.sidebarStatusHwnd)
+            return
+        This.updateNotice.Value := message
+        if message != "" {
+            This.sidebarStatusBlock.GetPos(&x, &y, &width, &height)
+            scale := A_ScreenDPI / 96
+            rect := Buffer(16, 0)
+            NumPut("Int", Round(width * scale), rect, 8)
+            dc := DllCall("GetDC", "Ptr", This.updateNotice.Hwnd, "Ptr")
+            font := SendMessage(0x31, 0, 0, This.updateNotice) ; WM_GETFONT
+            previousFont := DllCall("SelectObject", "Ptr", dc, "Ptr", font, "Ptr")
+            try {
+                ; Measure wrapped text so both one- and two-line messages are centered.
+                DllCall("DrawTextW", "Ptr", dc, "Str", message, "Int", -1, "Ptr", rect, "UInt", 0xC10)
+                textHeight := Min(height, Ceil(NumGet(rect, 12, "Int") / scale))
+                This.updateNotice.Move(x, y + Floor((height - textHeight) / 2), width, textHeight)
+            } finally {
+                DllCall("SelectObject", "Ptr", dc, "Ptr", previousFont)
+                DllCall("ReleaseDC", "Ptr", This.updateNotice.Hwnd, "Ptr", dc)
+            }
+        }
+        This.sidebarStatusBlock.Visible := message != ""
+        This.updateNotice.Visible := message != ""
+    }
+
+    BeginSidebarUpdateStatus() {
+        ; A pending save from an earlier edit must not replace this action.
+        This.sidebarSettingsSnapshot := JSON.Dump(This._JSON, , "    ")
+        This.sidebarStatusOwner := "update"
+    }
+
+    SettingsSaveCompleted(serializedSettings) {
+        if !This.HasOwnProp("sidebarStatusHwnd") || !This.sidebarStatusHwnd
+            || !DllCall("IsWindow", "Ptr", This.sidebarStatusHwnd)
+            || serializedSettings = This.sidebarSettingsSnapshot
+            return
+        This.sidebarSettingsSnapshot := serializedSettings
+        This.sidebarStatusOwner := "save"
+        This.SetSidebarStatus("Changes saved.`nClose Settings to apply.")
+    }
+
+    ShowSettingsContent() {
+        ; GUI sizes are DPI-scaled, but Show's X/Y are raw parent coordinates.
+        ; Measure the sidebar's actual edge instead of using its logical width.
+        rect := Buffer(16, 0)
+        if !DllCall("GetWindowRect", "Ptr", This.Sidebar.Hwnd, "Ptr", rect)
+            throw OSError()
+        DllCall("MapWindowPoints", "Ptr", 0, "Ptr", This.S_Gui.Hwnd, "Ptr", rect, "UInt", 2)
+        This.MainFrame.Show(Format("x{} y{} w{} h{}", NumGet(rect, 8, "Int"), NumGet(rect, 4, "Int"), This.contentW - 10, This.guiHeight - 10))
     }
 
     SetState() {
@@ -103,7 +192,7 @@ Class Settings_Gui {
         This.contentGap := 16
 
         This.guiWidth := 700
-        This.guiHeight := 160 + (This.profilesGroups.Length * 42) ; Dynamic height size! Depends on buttons count
+        This.guiHeight := 192 + (This.profilesGroups.Length * 42) ; Dynamic height size! Depends on buttons count
 
         This.btnH := 32
         This.objH := 20
@@ -148,7 +237,11 @@ Class Settings_Gui {
         btnRename := This.Sidebar.Add("Button", Format("xp+{} yp w{} h{}", This.sidebar3BtnW + This.baseGrid + 1, This.sidebar3BtnW, This.btnH), "Rename")
         btnDelete := This.Sidebar.Add("Button", Format("xp+{} yp w{} h{}", This.sidebar3BtnW + This.baseGrid + 1, This.sidebar3BtnW, This.btnH), "Delete")
 
-        This.Sidebar.Add("Text", Format("xs yp+{}", This.btnH + This.contentGap), "Select a settings group")
+        This.Sidebar.Add("Text", Format("xs yp+{}", This.btnH + This.contentGap), "Profile hotkey:")
+        profileHotkey := This.Sidebar.Add("Edit", Format("xs+104 yp-{} w{}", This.editOffset, This.sidebarInnerW - 104) " vProfileActivationHotkey", This.ProfileActivationHotkey)
+        profileHotkey.OnEvent("Change", (obj, *) => This.ProfileActivationHotkeyChanged(obj))
+
+        This.Sidebar.Add("Text", Format("xs yp+{}", This.xlGap + This.editOffset), "Select a settings group")
 
         for index, btn_text in This.profilesGroups {
             if index == 1 {
@@ -156,11 +249,19 @@ Class Settings_Gui {
                 This.firstBtn := btn
             }
             else
-                btn := This.Sidebar.Add("Button", Format("xp yp+{} w{} h{}", This.btnH + This.baseGrid, This.sidebarInnerW, This.btnH), btn_text)
+                btn := This.Sidebar.Add("Button", Format("xp yp+{} w{} h{}", This.btnH + This.baseGrid / 2, This.sidebarInnerW, This.btnH), btn_text)
             btn.OnEvent("Click", (Obj, *) => This.SettingsGroup_Handler(Obj))
         }
 
-        This.updateNotice := This.Sidebar.Add("Text", Format("x{} y{} w{} h40 c007040", This.contentGap, This.guiHeight - 44, This.sidebarInnerW), "")
+        This.testThumbnailButton := This.Sidebar.Add("Button", Format("x{} y{} w{} h26 vTestThumbnailButton", This.contentGap, This.guiHeight - 82, This.sidebarInnerW), "Test Thumbnail")
+        This.testThumbnailButton.ToolTip := "Preview current settings at the default position with sample overlays and cycling border states. Click again to close."
+        This.testThumbnailButton.OnEvent("Click", (*) => This.ToggleTestThumbnail())
+
+        ; One fixed status area reports the latest save or update-check action.
+        This.sidebarStatusBlock := This.Sidebar.Add("Text", Format("x{} y{} w{} h40 Hidden BackgroundE3F3DE", This.contentGap, This.guiHeight - 48, This.sidebarInnerW), "")
+        This.updateNotice := This.Sidebar.Add("Text", Format("x{} y{} w{} h40 Hidden Center +0x80 BackgroundE3F3DE c245A21", This.contentGap, This.guiHeight - 48, This.sidebarInnerW), "")
+        This.updateNotice.SetFont("s10 w700", "Segoe UI")
+        This.ResetSidebarStatus()
 
         This.SelectProfile_DDL.Choose(This.LastUsedProfile)
         This.SelectProfile_DDL.OnEvent("Change", (obj,*) => This._Button_Load(Obj))
@@ -177,7 +278,38 @@ Class Settings_Gui {
         This.MainFrame.Group := Map()
     }
 
+    ToggleTestThumbnail() {
+        if This.HasOwnProp("settingsThumbnail") && IsObject(This.settingsThumbnail) {
+            This.StopTestThumbnail()
+            return
+        }
+        This.CancelHotkeyRecording()
+        try {
+            This.settingsThumbnail := SettingsThumbnailPreview(This)
+            This.testThumbnailButton.Text := "Close Test Thumbnail"
+        } catch as err {
+            ProgramLog.Error(err, "Open test thumbnail")
+            MsgBox(err.Message, "Test thumbnail", "Icon! Owner" This.S_Gui.Hwnd)
+        }
+    }
+
+    StopTestThumbnail() {
+        if This.HasOwnProp("settingsThumbnail") && IsObject(This.settingsThumbnail) {
+            preview := This.settingsThumbnail
+            This.settingsThumbnail := 0
+            preview.Close()
+        }
+        try This.testThumbnailButton.Text := "Test Thumbnail"
+    }
+
+    ProfileActivationHotkeyChanged(obj, *) {
+        This.ProfileActivationHotkey := obj.Value
+        This.NeedRestart := 1
+        SetTimer(This.Save_Settings_Delay_Timer, -200)
+    }
+
     SettingsGroup_Handler(Obj) {
+        This.CancelHotkeyRecording()
         for k, v in This.MainFrame.Group {
             if k = Obj.Text {
                 for _, ob in v
@@ -189,6 +321,8 @@ Class Settings_Gui {
             }                
         }
         This.S_Gui.Show()
+        This.ScheduleHotkeyWarnings()
+        This.RefreshColorPickers()
     }
 
     createHtkCaptureBtn() {
@@ -902,6 +1036,9 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Shift Thumbnails on Login Screen:")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShiftThumbsForLoginScreen Checked" This.ShiftThumbsForLoginScreen, "On/Off")
 
+        arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Shift Logged-In Thumbnails (Unsaved):")
+        arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShiftThumbsForLoggedInCharacters Checked" This.ShiftThumbsForLoggedInCharacters, "On/Off")
+
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Enable Thumbnail Collision Avoidance:")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShiftThumbsCollisionCheck Checked" This.ShiftThumbsCollisionCheck, "On/Off")
 
@@ -935,6 +1072,7 @@ Class Settings_Gui {
         This.MainFrame["ThumbnailSnap_Distance"].OnEvent("Change", (obj, *) => EventHandler(obj))
         This.MainFrame["HideThumbForActiveWin"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbsForLoginScreen"].OnEvent("Click", (obj, *) => EventHandler(obj))
+        This.MainFrame["ShiftThumbsForLoggedInCharacters"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbsCollisionCheck"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbsDirection"].OnEvent("Change", (obj, *) => EventHandler(obj))
         This.MainFrame["ShiftThumbHorizontalStep"].OnEvent("Change", (obj, *) => EventHandler(obj))
@@ -993,6 +1131,9 @@ Class Settings_Gui {
             else if (obj.name = "ShiftThumbsForLoginScreen") {
                 This.ShiftThumbsForLoginScreen := obj.value
             }
+            else if (obj.name = "ShiftThumbsForLoggedInCharacters") {
+                This.ShiftThumbsForLoggedInCharacters := obj.value
+            }
             else if (obj.name = "ShiftThumbsCollisionCheck") {
                 This.ShiftThumbsCollisionCheck := obj.value
             }
@@ -1049,6 +1190,13 @@ Class Settings_Gui {
 
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Show Client Highlight Border:")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vShowClientHighlightBorder Checked" This.ShowClientHighlightBorder, "On/Off")
+
+        arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Event / Active Border Layout:")
+        borderMode := This.MainFrame.Add("DDL", Format("xp+{} yp-{} w{}", This.offsetX, This.editOffset, This.editW) " vEventActiveBorderMode Choose" This.EventActiveBorderMode,
+            ["Event in, active out", "Active in, event out", "Combined (existing)"])
+        borderMode.ToolTip := "Separate borders: event inside / active outside (default), or active inside / event outside. Combined uses the previous shared-border behavior. Both rings use the client highlight thickness; inactive/group border settings still apply."
+        arr.Push borderMode
+        borderMode.OnEvent("Change", (obj, *) => EventHandler(obj))
 
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Thumbnail Opacity (%):")
         arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp-{} w{}", This.offsetX, This.editOffset, This.editW) " vThumbnailOpacity -Wrap", IntegerToPercentage(This.ThumbnailOpacity))
@@ -1171,6 +1319,9 @@ Class Settings_Gui {
             else if (obj.name = "ShowClientHighlightBorder") {
                 This.ShowClientHighlightBorder := obj.value
             }
+            else if (obj.name = "EventActiveBorderMode") {
+                This.EventActiveBorderMode := obj.value
+            }
             else if (obj.name = "ThumbnailOpacity") {
                 This.ThumbnailOpacity := obj.value
             }
@@ -1259,6 +1410,9 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Track Current System (Local Chat):")
         arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vsystemTrackingEnabled", "On/Off")
 
+        arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Color System Names by System:")
+        arr.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vsystemColorsEnabled Checked" This.systemColorsEnabled, "On/Off")
+
         arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), "Chat Logs (blank = auto):")
         arr.Push This.MainFrame.Add("Button", Format("xp+{} yp-{} w{} h{}", This.offsetX - 60 - This.baseGrid, 5, 60, 26) " vselectChatLogsDirectory", "Select")
         arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp+{} w{}", 60 + This.baseGrid, 1, This.editW) " vchatLogsDirectory")
@@ -1302,6 +1456,7 @@ Class Settings_Gui {
 
         This.MainFrame["gameLogsMonitoringEnabled"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["systemTrackingEnabled"].OnEvent("Click", (obj, *) => EventHandler(obj))
+        This.MainFrame["systemColorsEnabled"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["chatLogsDirectory"].OnEvent("Change", (obj, *) => EventHandler(obj))
         This.MainFrame["selectChatLogsDirectory"].OnEvent("Click", (obj, *) => EventHandler(obj))
         This.MainFrame["selectGameLogsDirectory"].OnEvent("Click", (obj, *) => EventHandler(obj))
@@ -1323,6 +1478,11 @@ Class Settings_Gui {
                 This.gameLogsMonitoringEnabled := obj.value
             else if obj.name = "systemTrackingEnabled"
                 This.systemTrackingEnabled := obj.value
+            else if obj.name = "systemColorsEnabled" {
+                This.systemColorsEnabled := obj.value
+                SetTimer(This.Save_Settings_Delay_Timer, -200)
+                return ; Color changes apply immediately and do not require a restart.
+            }
             else if obj.name = "chatLogsDirectory"
                 This.chatLogsDirectory := obj.value
             else if obj.name = "selectChatLogsDirectory" {
@@ -1404,6 +1564,15 @@ Class Settings_Gui {
         ]
 
         editCW := 60
+        controlGap := This.baseGrid
+        soundSize := 26
+        optionW := 64
+        ; Work inward from the panel padding so every row shares the same gaps.
+        soundX := This.contentW - This.contentGap - soundSize
+        previewX := soundX - controlGap - This.cPreviewSize
+        colorX := previewX - controlGap - editCW
+        secondOptionX := colorX - controlGap - optionW
+        firstOptionX := secondOptionX - controlGap - optionW
 
         This.MainFrame.SetFont("s12 w700 q5")
         arr.Push This.MainFrame.Add("Text", Format("x{} y{}", This.contentGap, This.contentGap), "Monitored Events")
@@ -1414,24 +1583,31 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xp yp+{} Section", This.contentGap), "with the number of characters currently being tracked.")
 
         for event in monitoredEventsOrder {
-            label := event = "underAttackByPlayer" ? "Player attack" : event = "underAttackByNPC" ? "NPC attack" : This.monitoredEventsTexts[event]
-            arr.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.xlGap), label . (event = "stoppedShooting" ? " (Interval ms):" : ":"))
+            attackEvent := event = "underAttackByPlayer" || event = "underAttackByNPC"
+            label := event = "stoppedShooting" ? "Shooting idle (ms):" : event = "underAttackByPlayer" ? "Player attack" : event = "underAttackByNPC" ? "NPC attack" : This.monitoredEventsTexts[event]
+            nextControlX := event = "stoppedShooting" ? secondOptionX : attackEvent ? firstOptionX : colorX
+            labelWidth := nextControlX - This.contentGap - controlGap
+            arr.Push This.MainFrame.Add("CheckBox", Format("xs ys+{} w{} Section", This.xlGap, labelWidth) " vE" event, label)
 
             if event = "stoppedShooting" {
-                arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp-{} w{}", This.offsetX - 50 - This.baseGrid, This.editOffset, 50) " vshootingInterval")
+                arr.Push This.MainFrame.Add("Edit", Format("x{} ys-{} w{}", secondOptionX, This.editOffset, optionW) " vshootingInterval")
+                This.MainFrame["E" event].ToolTip := "Stopped Shooting: alert after this many milliseconds without an outgoing shot."
+                This.MainFrame["shootingInterval"].ToolTip := "Stopped Shooting interval in milliseconds."
                 This.MainFrame["shootingInterval"].OnEvent("Change", (obj, *) => EventHandler(obj))
             }
 
-            if event = "underAttackByPlayer" || event = "underAttackByNPC" {
-                arr.Push This.MainFrame.Add("CheckBox", "xs+110 ys w65 vN" event, "Neuts")
+            if attackEvent {
+                arr.Push This.MainFrame.Add("CheckBox", Format("x{} ys w{}", firstOptionX, optionW) " vN" event, "Neuts")
                 This.MainFrame["N" event].OnEvent("Click", (obj, *) => EventHandler(obj))
-                arr.Push This.MainFrame.Add("CheckBox", "xs+180 ys w65 vM" event, "Misses")
+                arr.Push This.MainFrame.Add("CheckBox", Format("x{} ys w{}", secondOptionX, optionW) " vM" event, "Misses")
                 This.MainFrame["M" event].OnEvent("Click", (obj, *) => EventHandler(obj))
             }
 
-            arr.Push This.MainFrame.Add("CheckBox", Format("xs+{} ys", This.offsetX) " vE" event, "On/Off")
-            arr.Push This.MainFrame.Add("Edit", Format("xp+{} yp-{} w{}", 60 + This.baseGrid, This.editOffset, editCW) " vC" event)
-            arr.Push This.MainFrame.Add("Text", Format("xp+{} yp w{} h{}", editCW + This.baseGrid, This.cPreviewSize, This.cPreviewSize,) " vPreviewC" event " Border")
+            arr.Push This.MainFrame.Add("Edit", Format("x{} ys-{} w{}", colorX, This.editOffset, editCW) " vC" event)
+            arr.Push This.MainFrame.Add("Text", Format("x{} yp w{} h{}", previewX, This.cPreviewSize, This.cPreviewSize) " vPreviewC" event " Border")
+            soundButton := This.MainFrame.Add("Button", Format("x{} yp-1 w{} h{}", soundX, soundSize, soundSize) " vSound" event, Chr(0x266A))
+            soundButton.OnEvent("Click", ObjBindMethod(This, "OpenEventSoundDialog", event))
+            arr.Push(soundButton)
             
             This.MainFrame["E" event].OnEvent("Click", (obj, *) => EventHandler(obj))
             This.MainFrame["C" event].OnEvent("Change", (obj, *) => EventHandler(obj))
@@ -1465,6 +1641,7 @@ Class Settings_Gui {
         }
 
         This.MainFrame.Group["Monitored Events"] := arr
+        This.RefreshEventSoundButtons()
         for k, v in This.MainFrame.Group["Monitored Events"]
             v.Visible := 0
     }
@@ -1727,6 +1904,7 @@ Class Settings_Gui {
 
     Other_Ctrl() {
         This.MainFrame.Group["Other"] := [], Other := []
+        topSettingsGap := This.xlGap
 
         This.GlobalGroupsOrder := [
             "Hotkey Groups",
@@ -1753,7 +1931,10 @@ Class Settings_Gui {
         Other.Push This.MainFrame.Add("Text", Format("xp yp+{} Section", This.lGap), "Slow Thumbnail Creation:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vSlowThumbnailCreation Checked" This.SlowThumbnailCreation, "On/Off")
         This.MainFrame["SlowThumbnailCreation"].ToolTip := "Off: create ready previews immediately. On: wait 3 seconds, then stagger previews to reduce startup GPU pressure."
-        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", This.lGap), "Switch Language to English on Error:")
+        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", topSettingsGap), "Auto-Pause on DWM Failure:")
+        Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vAutoPauseOnDwmFailure Checked" This.AutoPauseOnDwmFailure, "On/Off")
+        This.MainFrame["AutoPauseOnDwmFailure"].ToolTip := "Disabled by default. Pause live previews on DWM errors or Windows composition changes. Resume manually in About or with the pause/resume hotkey. Applies immediately."
+        Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", topSettingsGap), "Switch Language to English on Error:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vSwitchLangOnErr Checked" This.SwitchLangOnErr, "On/Off")
 
         Other.Push This.MainFrame.Add("Text", Format("xs ys+{} w{} h2 +0x10", This.xlGap, This.sepW))
@@ -1773,6 +1954,7 @@ Class Settings_Gui {
 
         This.MainFrame["SwitchLangOnErr"].OnEvent("Click", (obj, *) => cOther_EventHandler(obj))
         This.MainFrame["SlowThumbnailCreation"].OnEvent("Click", (obj, *) => cOther_EventHandler(obj))
+        This.MainFrame["AutoPauseOnDwmFailure"].OnEvent("Click", (obj, *) => cOther_EventHandler(obj))
         This.MainFrame["UpdateGls"].OnEvent("Click", (obj, *) => cOther_EventHandler(obj))
         This.MainFrame["UpdateThumbnails"].OnEvent("Click", (obj, *) => cOther_EventHandler(obj))
 
@@ -1783,6 +1965,10 @@ Class Settings_Gui {
                 This.SlowThumbnailCreation := obj.value
                 This.previewQueue := PreviewStartupQueue(A_TickCount, This.SlowThumbnailCreation)
                 ProgramLog.Add("Slow thumbnail creation=" This.SlowThumbnailCreation)
+            }
+            else if obj.name = "AutoPauseOnDwmFailure" {
+                This.AutoPauseOnDwmFailure := obj.value
+                ProgramLog.Add("Auto-pause on DWM failure=" This.AutoPauseOnDwmFailure)
             }
             else if (obj.name = "SwitchLangOnErr") {
                 This.SwitchLangOnErr := obj.value
@@ -1800,7 +1986,7 @@ Class Settings_Gui {
                 This.Update_All_Thumbnails()
                 need_reload := 1
             }
-            if obj.name != "SlowThumbnailCreation"
+            if obj.name != "SlowThumbnailCreation" && obj.name != "AutoPauseOnDwmFailure"
                 This.NeedRestart := 1
             SetTimer(This.Save_Settings_Delay_Timer, -200)
             if need_reload {
@@ -1861,17 +2047,7 @@ Class Settings_Gui {
     About_Ctrl() {
         arr := []
 
-        try {
-            if A_IsCompiled
-                This.programVersion := FileGetVersion(A_ScriptFullPath)
-            else {
-                if !RegExMatch(FileRead(A_ScriptDir "\Main.ahk"), "U_version = ([\d.]+)", &versionMatch)
-                    throw Error("Source version missing")
-                This.programVersion := versionMatch[1]
-            }
-        }
-        catch
-            This.programVersion := "1.0.0.0"
+        This.programVersion := UpdateChecker.CurrentVersion()
 
         updBtnW := 158
         offsetX := 150
@@ -1898,6 +2074,8 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Text", Format("xp+{} yp w260 h24", offsetX) " vUpdateStatus", "Not checked yet.")
 
         arr.Push This.MainFrame.Add("Button", Format("xs ys+{} Section", This.xlGap) " vcheckUpdatesBtn", "Check Updates")
+        arr.Push This.MainFrame.Add("Button", Format("x+{} yp", This.baseGrid) " vshowChangelogBtn", "Show Changelog")
+        This.MainFrame["showChangelogBtn"].OnEvent("Click", (*) => ChangelogWindow.Show())
 
         arr.Push This.MainFrame.Add("Button", Format("xs ys+{} w{} Section", This.captBtnH + This.contentGap, updBtnW) " vupdateToReleaseBtn", "Update to Release")
         arr.Push This.MainFrame.Add("Button", Format("xs+{} ys w{}", updBtnW + This.baseGrid, updBtnW) " vupdateToPreReleaseBtn", "Update to Pre-Release")
@@ -1908,7 +2086,7 @@ Class Settings_Gui {
         arr.Push This.MainFrame.Add("Button", Format("x{} yp+28 w130", This.contentGap) " vshowProgramLogBtn", "Show Log")
         arr.Push This.MainFrame.Add("Button", "xp+138 yp w130 vexportProgramLogBtn", "Export Log")
         arr.Push This.MainFrame.Add("Button", Format("x{} yp+36 w200", This.contentGap) " vpausePreviewsBtn", This.livePreviewsPaused ? "Resume Live Previews" : "Pause Live Previews")
-        arr.Push This.MainFrame.Add("Text", Format("x{} yp+32 w{} r2", This.contentGap, This.sepW), "Pause live previews when needed; hotkeys stay available. Creation speed is controlled in Other.")
+        arr.Push This.MainFrame.Add("Text", Format("x{} yp+32 w{} r2", This.contentGap, This.sepW) " vlivePreviewsStatus", This.LivePreviewStatus())
         arr.Push This.MainFrame.Add("Text", Format("x{} yp+48 w{} r2", This.contentGap, This.sepW), "Automatic logs: %LOCALAPPDATA%\EVE-X-Preview\Logs`nScript errors automatically export a diagnostic snapshot.")
         This.MainFrame["showProgramLogBtn"].OnEvent("Click", (*) => ProgramLog.Show())
         This.MainFrame["exportProgramLogBtn"].OnEvent("Click", (*) => ProgramLog.ExportDialog())
@@ -2073,10 +2251,12 @@ Class Settings_Gui {
     }
 
     _Button_Load(obj?,*) {
+        This.CancelHotkeyRecording()
         if (IsSet(obj))
             This.NeedRestart := 1
         
         This.LastUsedProfile := This.Sidebar["SelectedProfile"].Text
+        This.Sidebar["ProfileActivationHotkey"].Value := This.ProfileActivationHotkey
         This.ProfileOverride()
         This.Refresh_ControlValues()
         This.UpdateOvrText()
@@ -2093,7 +2273,7 @@ Class Settings_Gui {
                     if k != group || !enab
                         continue
                     if group = "Other" {
-                        Loop 6
+                        Loop 8
                             v[A_Index].Enabled := 0
                     }
                     else if group = "Hotkeys Settings" {
@@ -2122,6 +2302,8 @@ Class Settings_Gui {
         }
 
         SetTimer(This.Save_Settings_Delay_Timer, -200)
+        This.ScheduleHotkeyWarnings()
+        This.RefreshColorPickers()
     }
 
     Refresh_ControlValues() {
@@ -2213,6 +2395,7 @@ Class Settings_Gui {
         This.RedrawColorPreview(This.MainFrame["ClientHighligtColor"])
         This.MainFrame["ClientHighligtBorderthickness"].value := This.ClientHighligtBorderthickness
         This.MainFrame["ShowClientHighlightBorder"].value := This.ShowClientHighlightBorder
+        This.MainFrame["EventActiveBorderMode"].Choose(This.EventActiveBorderMode)
         This.MainFrame["AutoSaveThumbnailPositions"].value := This.AutoSaveThumbnailPositions
         This.MainFrame["HideThumbnails"].value := This.HideThumbnails
         This.MainFrame["HideThumbnailsOnLostFocus"].value := This.HideThumbnailsOnLostFocus
@@ -2237,6 +2420,7 @@ Class Settings_Gui {
         This.MainFrame["PreserveCharNameOnLogout"].value := This.PreserveCharNameOnLogout
         This.MainFrame["HideThumbForActiveWin"].value := This.HideThumbForActiveWin
         This.MainFrame["ShiftThumbsForLoginScreen"].value := This.ShiftThumbsForLoginScreen
+        This.MainFrame["ShiftThumbsForLoggedInCharacters"].value := This.ShiftThumbsForLoggedInCharacters
         This.MainFrame["ShiftThumbsCollisionCheck"].value := This.ShiftThumbsCollisionCheck
         current_index := This.directions.Get(This.ShiftThumbsDirection, 8)
         This.MainFrame["ShiftThumbsDirection"].Choose(current_index)
@@ -2260,6 +2444,7 @@ Class Settings_Gui {
         ; Game Logs Monitoring
         This.MainFrame["gameLogsMonitoringEnabled"].value := This.gameLogsMonitoringEnabled
         This.MainFrame["systemTrackingEnabled"].Value := This.systemTrackingEnabled
+        This.MainFrame["systemColorsEnabled"].Value := This.systemColorsEnabled
         This.MainFrame["chatLogsDirectory"].Value := This.chatLogsDirectory
         This.MainFrame["monitoringInterval"].value := This.monitoringInterval
         This.MainFrame["gameLogsDirectory"].value := This.gameLogsDirectory
@@ -2284,6 +2469,7 @@ Class Settings_Gui {
         }
         This.MainFrame["shootingInterval"].value := This.shootingInterval
         This.MainFrame["IgnorePlayerSmartbombDamage"].Value := This.monitoredEvents["underAttackByPlayer"].Get("ignoreSmartbombDamage", 1)
+        This.RefreshEventSoundButtons()
 
         ; DPS Monitoring
         for name in ["incomingDPSEnabled", "incomingDPSThreshold", "showIncomingDPSResistances", "outgoingDPSEnabled", "outgoingDPSThreshold", "dpsAverageSeconds"]
@@ -2312,6 +2498,7 @@ Class Settings_Gui {
         ; Other
         This.MainFrame["SwitchLangOnErr"].value := This.SwitchLangOnErr
         This.MainFrame["SlowThumbnailCreation"].Value := This.SlowThumbnailCreation
+        This.MainFrame["AutoPauseOnDwmFailure"].Value := This.AutoPauseOnDwmFailure
 
         for group in This.GlobalGroupsOrder {
             group_ := StrReplace(group, A_Space, "_")

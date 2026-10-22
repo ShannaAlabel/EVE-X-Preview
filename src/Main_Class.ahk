@@ -38,9 +38,14 @@ Class Main_Class extends ThumbWindow {
     ;### Predifining Arrays and Maps #########
     EventHooks := Map() 
     ThumbWindows := {}
+    systemColors := SystemColorManager()
     ThumbHwnd_EvEHwnd := Map()
     previewQueue := PreviewStartupQueue()
     livePreviewsPaused := false
+    previewGeneration := 0
+    previewDwmCalls := 0
+    releasingLivePreviews := false
+    livePreviewPauseReason := ""
     _debugToolTipText := ""
     debugToolTipText {
         get => This._debugToolTipText
@@ -61,6 +66,7 @@ Class Main_Class extends ThumbWindow {
 
         This._JSON := Load_JSON()
         This.default_JSON := JSON.Load(default_JSON)
+        This.runningProfile := This.LastUsedProfile
        
         This.ProfileOverride()
         This.TrayMenu()
@@ -74,29 +80,9 @@ Class Main_Class extends ThumbWindow {
 
         This.Save_Settings_Delay_Timer := ObjBindMethod(This, "SaveJsonToFile")
 
-        if This.First_Start_After_Update { ; Display message after succsessful update
-            Sleep 3000 ; Let updater time to close
-            SetWorkingDir(A_ScriptDir)
-            
-            ; Check for both old and new updater locations
-            updaterExeName := "EVE-X-Preview-Updater.exe"
-            updaterExePath := A_Temp "\" updaterExeName
-
-            if FileExist(updaterExeName)
-                FileDelete(updaterExeName)
-            if FileExist(updaterExePath)
-                FileDelete(updaterExePath)
-
-            This.First_Start_After_Update := 0
-            SetTimer(This.Save_Settings_Delay_Timer, -200)
-
-            Version := FileGetVersion(A_ScriptName)
-            MsgBox("EVE-X-Preview succsessfully updated to version " Version)
-        }
-
         ; Register Hotkey for Puase Hotkeys if the user has is Set
         if (This.Suspend_Hotkeys_Hotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.Suspend_Hotkeys_Hotkey, ( * ) => This.Suspend_Hotkeys(), "S1"
@@ -109,7 +95,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Hide Thumbnails if the user has is Set
         if (This.HideThumbnailsHotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.HideThumbnailsHotkey, ( * ) => This.ShowHideThumbnails(), "S1"
@@ -122,7 +108,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Click Through if the user has is Set
         if (This.ClickThroughHotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.ClickThroughHotkey, ( * ) => This.Toggle_ClickThrough(), "S1"
@@ -140,14 +126,9 @@ Class Main_Class extends ThumbWindow {
             else
                 HotIf (*) => WinActive(This.EVEExe)
             
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(This.SwitchToPreviousWindow_Hotkey, ObjBindMethod(This, "SwitchToPrevWin"),"P1" )
-                catch ValueError as e
-                    MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Switch to Previous Window - Hotkey")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(This.SwitchToPreviousWindow_Hotkey, ObjBindMethod(This, "SwitchToPrevWin"), "P1", "Previous window")
+            try This.RegisterWindowHotkey(This.SwitchToPreviousWindow_Hotkey, ObjBindMethod(This, "SwitchToPrevWin"), "Previous window")
+            catch ValueError as e
+                MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Switch to Previous Window - Hotkey")
         }
 
         ; Register Hotkey for Login Screen Cycle Hotkey if user set
@@ -157,14 +138,9 @@ Class Main_Class extends ThumbWindow {
             else
                 HotIf (*) => WinActive(This.EVEExe)
             
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(This.CycleEveryLoggedIn_Hotkey, ObjBindMethod(This, "CycleEveryLoggedInWin"),"P1" )
-                catch ValueError as e
-                    MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Every Logged in Window - Hotkey")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(This.CycleEveryLoggedIn_Hotkey, ObjBindMethod(This, "CycleEveryLoggedInWin"), "P1", "Cycle logged in windows")
+            try This.RegisterWindowHotkey(This.CycleEveryLoggedIn_Hotkey, ObjBindMethod(This, "CycleEveryLoggedInWin"), "Cycle logged in windows")
+            catch ValueError as e
+                MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Every Logged in Window - Hotkey")
         }
 
         ; Register Hotkey for Login Screen Cycle Hotkey if user set
@@ -174,14 +150,9 @@ Class Main_Class extends ThumbWindow {
             else
                 HotIf (*) => WinActive(This.EVEExe)
             
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(This.Login_Screen_Cycle_Hotkey, ObjBindMethod(This, "Cycle_Login_Windows"),"P1" )
-                catch ValueError as e
-                    MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Login Screens - Hotkey")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(This.Login_Screen_Cycle_Hotkey, ObjBindMethod(This, "Cycle_Login_Windows"), "P1", "Cycle login screens")
+            try This.RegisterWindowHotkey(This.Login_Screen_Cycle_Hotkey, ObjBindMethod(This, "Cycle_Login_Windows"), "Cycle login screens")
+            catch ValueError as e
+                MsgBox(e.Message ": --> " e.Extra " <-- in: Hotkeys Settings -> Cycle Login Screens - Hotkey")
         }
 
         ; Register Hotkey for Close Active EVE Window Hotkey if user set
@@ -212,7 +183,7 @@ Class Main_Class extends ThumbWindow {
 
         ; Register Hotkey for Reload EVE-X-Preview Hotkey if user set
         if (This.Reload_Program_Hotkey != "") {
-            HotIf (*) => This.anyWinExists()
+            HotIf (*) => !HotkeyCapture.Active && This.anyWinExists()
             if !This.SwitchLangOnErr {
                 try
                     Hotkey This.Reload_Program_Hotkey, ( * ) => Reload(), "S1"
@@ -223,7 +194,7 @@ Class Main_Class extends ThumbWindow {
                 This.RegisterHotkeyWithLanguageRetry(This.Reload_Program_Hotkey, (*) => Reload(), "S1", "Reload program")
         }
 
-        HotIf() ; These application controls also work when no EVE window is open.
+        HotIf (*) => !HotkeyCapture.Active ; Also available without EVE, except while recording.
         if (This.ToggleLivePreviewsHotkey != "") {
             if !This.SwitchLangOnErr {
                 try
@@ -244,6 +215,8 @@ Class Main_Class extends ThumbWindow {
             else
                 This.RegisterHotkeyWithLanguageRetry(This.Exit_Program_Hotkey, (*) => ExitApp(), "S1", "Exit program")
         }
+
+        This.RegisterProfileHotkeys()
 
         ; ##############################
         ; Global vars and funcs/timers registration
@@ -305,6 +278,7 @@ Class Main_Class extends ThumbWindow {
 
         ;The Main Timer who checks for new EVE Windows or closes Windows 
         This.previewQueue := PreviewStartupQueue(A_TickCount, This.SlowThumbnailCreation)
+        OnMessage(0x031E, ObjBindMethod(This, "OnDwmCompositionChanged"))
         ProgramLog.Add("Monitoring started; profile=" This.LastUsedProfile "; EVE windows=" WinGetList(This.EVEExe).Length "; slow thumbnail creation=" This.SlowThumbnailCreation)
         SetTimer(ObjBindMethod(This, "HandleMainTimer"), 50)
         OnExit(ObjBindMethod(This, "CloseLivePreviews"))
@@ -326,7 +300,90 @@ Class Main_Class extends ThumbWindow {
         This.gameLogsMonitoring()
         This.startSystemTracking()
 
+        This.ShowPostUpdateChangelog()
         return This
+    }
+
+    ShowPostUpdateChangelog() {
+        if !This.First_Start_After_Update
+            return
+        This.First_Start_After_Update := 0
+        SetTimer(This.Save_Settings_Delay_Timer, -200)
+        ; Initialization and monitoring finish before opening the modeless notice.
+        SetTimer((*) => ChangelogWindow.Show(true), -1)
+        ; Give the updater time to exit without delaying startup or the UI.
+        SetTimer(ObjBindMethod(This, "CleanupUpdater"), -3000)
+    }
+
+    CleanupUpdater(*) {
+        for path in [A_ScriptDir "\EVE-X-Preview-Updater.exe", A_Temp "\EVE-X-Preview-Updater.exe"] {
+            try {
+                if FileExist(path)
+                    FileDelete(path)
+            } catch as err {
+                ProgramLog.Add("Updater cleanup skipped; path=" path "; " err.Message, "WARN")
+            }
+        }
+    }
+
+    RegisterProfileHotkeys() {
+        ; All profiles remain reachable, even without an EVE window. Avoid firing while editing settings.
+        This.profileHotkeyCondition := (*) => !WinActive("EVE-X-Preview - Settings")
+        HotIf(This.profileHotkeyCondition)
+        This.profileHotkeys := Map()
+        try {
+            for profileName, profile in This.Profiles {
+                keyName := Trim(profile.Get("ActivationHotkey", ""), "`r`n `t")
+                if keyName = ""
+                    continue
+                ; Ask AHK so equivalent spellings (e.g. ^!F1 and !^f1) cannot replace a callback.
+                exists := false
+                try {
+                    Hotkey(keyName, "On")
+                    exists := true
+                } catch TargetError {
+                    ; No hotkey with this key combination and condition has been registered.
+                } catch ValueError {
+                    ; Let the registration below handle invalid names and keyboard-layout retry.
+                }
+                if exists {
+                    ProgramLog.Add("Duplicate profile hotkey skipped; profile=" profileName "; key=" keyName)
+                    continue
+                }
+                callback := ObjBindMethod(This, "ActivateProfileFromHotkey", profileName)
+                if This.TryRegisterProfileHotkey(keyName, callback, profileName)
+                    This.profileHotkeys[keyName] := profileName
+            }
+        } finally {
+            HotIf()
+        }
+    }
+
+    TryRegisterProfileHotkey(keyName, callback, profileName) {
+        try {
+            if This.SwitchLangOnErr
+                return This.RegisterHotkeyWithLanguageRetry(keyName, callback, "P1", "Activate profile " profileName)
+            Hotkey(keyName, callback, "P1")
+            return true
+        } catch Error as err {
+            ProgramLog.Error(err, "Profile hotkey registration; profile=" profileName "; key=" keyName)
+            return false
+        }
+    }
+
+    ActivateProfileFromHotkey(profileName, *) {
+        ; Holding a shortcut through reload must not repeatedly restart the active profile.
+        if profileName = This.runningProfile
+            return false
+        return This.ActivateProfile(profileName, "Hotkey")
+    }
+
+    RegisterWindowHotkey(keyName, callback, context) {
+        keyName := HotkeyBindings.ForWindowSwitch(keyName)
+        if This.SwitchLangOnErr
+            return This.RegisterHotkeyWithLanguageRetry(keyName, callback, "P1", context)
+        Hotkey(keyName, callback, "P1")
+        return true
     }
 
     RegisterHotkeyWithLanguageRetry(keyName, callback, options, context) {
@@ -398,8 +455,12 @@ Class Main_Class extends ThumbWindow {
         if This.HasOwnProp("previewTimerBusy") && This.previewTimerBusy
             return
         This.previewTimerBusy := true
+        started := A_TickCount
         try This.PollMainWindows()
-        finally This.previewTimerBusy := false
+        finally {
+            This.previewTimerBusy := false
+            ProgramLog.SlowOperation("Window polling", started)
+        }
     }
 
     PollMainWindows() {
@@ -511,7 +572,9 @@ Class Main_Class extends ThumbWindow {
                         ; Shows the Thumbnail on top of other thumbnails
                         if This.ShowThumbnailsAlwaysOnTop
                             WinSetAlwaysOnTop(1,This.ThumbWindows.%Ahwnd%["Window"].Hwnd )
-                        
+                        else
+                            This.RestackThumbnail(This.ThumbWindows.%Ahwnd%)
+
                         This.ShowActiveBorder(Ahwnd)
                         This.UpdateThumb_AfterActivation(, Ahwnd)
                         This.BorderActive := Ahwnd
@@ -539,6 +602,9 @@ Class Main_Class extends ThumbWindow {
                 }
                 if !WinList.Length
                     This.allLoginClosed := true
+                else if This.ShiftThumbsForLoggedInCharacters
+                    ; Keep sequential shifting advancing while logged-in clients remain.
+                    This.allLoginClosed := false
                 else {
                     for EVEHWND in This.ThumbWindows.OwnProps() {
                         if This.ThumbWindows.%EVEHWND%["Window"].Title == "EVE" {
@@ -614,14 +680,9 @@ Class Main_Class extends ThumbWindow {
         else    
             HotIf (*) => WinExist(title " " This.EVEExe) && WinActive(This.EVEExe) && !WinActive("EVE-X-Preview - Settings")
     
-        if !This.SwitchLangOnErr {
-            try
-                Hotkey SelectedHotkey, (*) => This.ActivateEVEWindow(, title), "P1"
-            catch ValueError as e
-                MsgBox(e.Message ": --> " e.Extra " <-- in Hotkey Settings - " This.LastUsedProfile " Hotkeys")
-        } 
-        else
-            This.RegisterHotkeyWithLanguageRetry(SelectedHotkey, (*) => This.ActivateEVEWindow(, title), "P1", "Activate " title)
+        try This.RegisterWindowHotkey(SelectedHotkey, (*) => This.ActivateEVEWindow(, title), "Activate " title)
+        catch ValueError as e
+            MsgBox(e.Message ": --> " e.Extra " <-- in Hotkey Settings - " This.LastUsedProfile " Hotkeys")
     }    
 
     ;Register the Hotkeys for cycle Groups if any set
@@ -653,25 +714,15 @@ Class Main_Class extends ThumbWindow {
 
             HotIf ObjBindMethod(This, method, This.HotkGroups[index])
             for direction, key in keys {
-                if !This.SwitchLangOnErr {
-                    try
-                        Hotkey(key, ObjBindMethod(This, "Cycle_Hotkey_Groups", index, direction), "P1")
-                    catch ValueError as e
-                        MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - " k "  - " direction)
-                }
-                else
-                    This.RegisterHotkeyWithLanguageRetry(key, ObjBindMethod(This, "Cycle_Hotkey_Groups", index, direction), "P1", "Hotkey group " k " " direction)
+                try This.RegisterWindowHotkey(key, ObjBindMethod(This, "Cycle_Hotkey_Groups", index, direction), "Hotkey group " k " " direction)
+                catch ValueError as e
+                    MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - " k "  - " direction)
             }
 
             if v["FirstCharHotkey"] != "" && v["Characters"].Length > 0 {
-                if !This.SwitchLangOnErr {
-                    try
-                        Hotkey(v["FirstCharHotkey"], ObjBindMethod(This, "ActivateFirstActiveCharInGroup", index), "P1")
-                    catch ValueError as e
-                        MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - First Active Character Hotkey")
-                }
-                else
-                    This.RegisterHotkeyWithLanguageRetry(v["FirstCharHotkey"], ObjBindMethod(This, "ActivateFirstActiveCharInGroup", index), "P1", "First character in hotkey group " k)
+                try This.RegisterWindowHotkey(v["FirstCharHotkey"], ObjBindMethod(This, "ActivateFirstActiveCharInGroup", index), "First character in hotkey group " k)
+                catch ValueError as e
+                    MsgBox(e.Message ": --> " e.Extra " <-- in Hotkeys Groups - " This.LastUsedProfile " - First Active Character Hotkey")
             }
 
             index += 1
@@ -806,13 +857,22 @@ Class Main_Class extends ThumbWindow {
         if hwnd = previousHwnd && previousExe != ""
             return {hwnd: hwnd, exe: previousExe}
         try
-            return {hwnd: hwnd, exe: WinGetProcessName("ahk_id " hwnd)}
+            return {hwnd: hwnd, exe: This._GetWindowProcessName(hwnd)}
         catch TargetError {
             ; Focus can disappear, or the captured window can close during this poll.
             ; Clear the cache so the next poll retries, without aborting queue cleanup.
             return {hwnd: 0, exe: ""}
         }
+        catch OSError as err {
+            if err.Number != 5
+                throw err
+            ; Protected/elevated foreground processes can deny name lookup.
+            ; Treat them as untracked; an empty exe forces a retry next poll.
+            return {hwnd: hwnd, exe: ""}
+        }
     }
+
+    _GetWindowProcessName(hwnd) => WinGetProcessName("ahk_id " hwnd)
 
     _FindGroupWindowIndex(arr, hwnd) {
         if !hwnd
@@ -898,14 +958,9 @@ Class Main_Class extends ThumbWindow {
         else
             HotIf (*) => WinActive(This.EVEExe)
         
-        if !This.SwitchLangOnErr {
-            try
-                Hotkey(This.QuickGroupHotkey, ObjBindMethod(This, "CycleQuickGroup"), "P1")
-            catch ValueError as e
-                MsgBox(e.Message ": --> " e.Extra " <-- in: Thumbnails Interactions - " This.LastUsedProfile " - Quick Group - Hotkey")
-        }
-        else
-            This.RegisterHotkeyWithLanguageRetry(This.QuickGroupHotkey, ObjBindMethod(This, "CycleQuickGroup"), "P1", "Quick group")
+        try This.RegisterWindowHotkey(This.QuickGroupHotkey, ObjBindMethod(This, "CycleQuickGroup"), "Quick group")
+        catch ValueError as e
+            MsgBox(e.Message ": --> " e.Extra " <-- in: Thumbnails Interactions - " This.LastUsedProfile " - Quick Group - Hotkey")
     }
 
     ; Cycle through QuickGroup
@@ -1369,7 +1424,7 @@ Class Main_Class extends ThumbWindow {
         if This.livePreviewsPaused
             return
         try {
-            WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
+            This.PreviewSourceSize(hwnd, &w, &h)
             if !This.previewQueue.items.Has(hwnd)
                 ProgramLog.Add("Preview queued hwnd=" hwnd " title=" title " size=" w "x" h)
             This.previewQueue.Observe(hwnd, title, w, h)
@@ -1389,6 +1444,8 @@ Class Main_Class extends ThumbWindow {
         if This.livePreviewsPaused
             return
         loop (This.previewQueue.slow ? 1 : This.previewQueue.items.Count) {
+            if This.livePreviewsPaused
+                break
             if !(hwnd := This.previewQueue.Next())
                 break
             This.ProcessQueuedPreview(hwnd)
@@ -1397,12 +1454,15 @@ Class Main_Class extends ThumbWindow {
 
     ProcessQueuedPreview(hwnd) {
         try {
+            generation := This.previewGeneration
+            This.EnsureLivePreviewActive(generation)
             title := WinGetTitle("ahk_id " hwnd)
             ProgramLog.Add("Preview startup hwnd=" hwnd " title=" title " queued=" This.previewQueue.items.Count)
             ProgramLog.Flush()
             item := This.previewQueue.items[hwnd]
-            if !This.ThumbWindows.HasProp(hwnd) && This.TrackClientPossitions && This.ClientPossitions.Has(title)
-                && !item.HasOwnProp("positionRestored") {
+            if !This.ThumbWindows.HasProp(hwnd) && This.TrackClientPossitions && This.ClientPossitions[title]
+                && !item.HasOwnProp("positionRestored") && !DllCall("IsIconic", "Ptr", hwnd) {
+                ; Restoring placement would un-minimize the client, so minimized ones keep their state.
                 This.RestoreClientPossitions(hwnd, title)
                 item.positionRestored := true
                 item.stableAt := A_TickCount
@@ -1413,10 +1473,13 @@ Class Main_Class extends ThumbWindow {
                 This.AttachLivePreview(This.ThumbWindows.%hwnd%, hwnd)
             else
                 This.EVE_WIN_Created(hwnd, title)
+            This.EnsureLivePreviewActive(generation)
             if !This.HideThumbnailsOnLostFocus || WinActive(This.EVEExe)
                 This.ShowThumb(hwnd, "Show")
             This.previewQueue.Remove(hwnd)
             ProgramLog.Add("Preview ready hwnd=" hwnd " live=" LiveThumb.OBJ_COUNTER)
+        } catch PreviewInterruptedError {
+            ; Pause invalidated this attempt; do not restart it or log a failure.
         } catch as err {
             This.previewQueue.Failed(hwnd)
             if This.previewQueue.items.Has(hwnd)
@@ -1426,20 +1489,98 @@ Class Main_Class extends ThumbWindow {
     }
 
     ToggleLivePreviews(*) {
+        ; Never resume into a DWM call or cleanup that has not returned yet.
+        if This.livePreviewsPaused && (This.previewDwmCalls || This.releasingLivePreviews
+            || (This.HasOwnProp("previewTimerBusy") && This.previewTimerBusy))
+            return
+        if This.livePreviewsPaused
+            This.ReleasePausedLivePreviews()
         This.livePreviewsPaused := !This.livePreviewsPaused
+        This.previewGeneration += 1
+        This.livePreviewPauseReason := ""
         ProgramLog.Add("Live previews " (This.livePreviewsPaused ? "paused" : "resumed"))
         This.previewQueue := PreviewStartupQueue(A_TickCount, This.SlowThumbnailCreation)
-        if This.livePreviewsPaused {
-            for hwnd, thumb in This.ThumbWindows.OwnProps() {
-                thumb["Thumbnail"].Close()
-                This.ShowThumb(hwnd, "Hide")
-            }
-        }
+        if This.livePreviewsPaused
+            This.ReleasePausedLivePreviews()
         ProgramLog.Flush()
         try This.MainFrame["pausePreviewsBtn"].Text := This.livePreviewsPaused ? "Resume Live Previews" : "Pause Live Previews"
+        try This.MainFrame["livePreviewsStatus"].Text := This.LivePreviewStatus()
+    }
+
+    EnsureLivePreviewActive(generation) {
+        if This.livePreviewsPaused || generation != This.previewGeneration
+            throw PreviewInterruptedError("Live preview startup interrupted by pause")
+    }
+
+    BeginPreviewDwmCall(generation) {
+        This.EnsureLivePreviewActive(generation)
+        This.previewDwmCalls += 1
+    }
+
+    EndPreviewDwmCall() {
+        This.previewDwmCalls -= 1
+    }
+
+    OnDwmCompositionChanged(*) {
+        This.PauseLivePreviewsForDwmFailure("Windows DWM composition changed")
+    }
+
+    PauseLivePreviewsForDwmFailure(reason) {
+        if !This.AutoPauseOnDwmFailure || This.livePreviewsPaused
+            return
+        ; Latch immediately, but never make another DWM call inside its notification.
+        This.livePreviewsPaused := true
+        This.previewGeneration += 1
+        This.livePreviewPauseReason := reason
+        This.previewQueue := PreviewStartupQueue(A_TickCount, This.SlowThumbnailCreation)
+        ProgramLog.Add("Live previews automatically paused: " reason "; resume manually in About or with the pause/resume hotkey", "WARN")
+        try This.MainFrame["pausePreviewsBtn"].Text := "Resume Live Previews"
+        try This.MainFrame["livePreviewsStatus"].Text := This.LivePreviewStatus()
+        This.SchedulePausedPreviewRelease()
+    }
+
+    SchedulePausedPreviewRelease() {
+        if !This.HasOwnProp("pausedPreviewReleaseTimer")
+            This.pausedPreviewReleaseTimer := ObjBindMethod(This, "ReleasePausedLivePreviews")
+        SetTimer(This.pausedPreviewReleaseTimer, -50)
+    }
+
+    ReleasePausedLivePreviews() {
+        if !This.livePreviewsPaused || This.releasingLivePreviews
+            return
+        if This.previewDwmCalls {
+            This.SchedulePausedPreviewRelease()
+            return
+        }
+        This.releasingLivePreviews := true
+        try {
+            for hwnd, thumb in This.ThumbWindows.OwnProps() {
+                try thumb["Thumbnail"].Close()
+                catch as err
+                    ProgramLog.Error(err, "Paused preview cleanup hwnd=" hwnd)
+                ; Hide windows directly so pausing never submits DWM properties.
+                for key, obj in thumb
+                    if key != "Thumbnail"
+                        try obj.Hide()
+                thumb["Window"].PreviewShown := false
+            }
+        } finally {
+            This.releasingLivePreviews := false
+        }
+        ProgramLog.Flush()
+    }
+
+    LivePreviewStatus() {
+        return This.livePreviewPauseReason != ""
+            ? "Automatically paused: " This.livePreviewPauseReason ". Resume when the display is stable."
+            : "Pause live previews when needed; hotkeys stay available. Creation speed is controlled in Other."
     }
 
     CloseLivePreviews(reason, code) {
+        This.livePreviewsPaused := true
+        This.previewGeneration += 1
+        if This.HasOwnProp("pausedPreviewReleaseTimer")
+            SetTimer(This.pausedPreviewReleaseTimer, 0)
         for hwnd, thumb in This.ThumbWindows.OwnProps()
             try thumb["Thumbnail"].Close()
         ProgramLog.Add("Live previews released on " reason)
@@ -1475,7 +1616,7 @@ Class Main_Class extends ThumbWindow {
                             rect["height"],
                             This.ThumbWindows.%Win_Hwnd% )
 
-            This.BorderSize(This.ThumbWindows.%Win_Hwnd%["Window"].Hwnd, This.ThumbWindows.%Win_Hwnd%["Border"].Hwnd)
+            This.LayoutThumbnailBorders(This.ThumbWindows.%Win_Hwnd%)
             This.Update_Thumb(false, This.ThumbWindows.%Win_Hwnd%["Window"].Hwnd)
             If ((This.HideThumbnailsOnLostFocus && WinActive(This.EVEExe)) || (!This.HideThumbnailsOnLostFocus)) {
                 This.ShowThumb(Win_Hwnd, "Show")
@@ -1483,6 +1624,8 @@ Class Main_Class extends ThumbWindow {
         }
         else {
             This.SetThumbnailText[Win_Hwnd] := Win_Title  ; No saved position, still set the label
+            if WinExist(This.EVEExe " ahk_id " Win_Hwnd)
+                This.ShiftThumbs(Win_Hwnd, true)
         }
 
         This.ThumbClickThrough(This.ThumbWindows.%Win_Hwnd%) ; If click through active, enable for new thumbnails
@@ -1507,13 +1650,13 @@ Class Main_Class extends ThumbWindow {
         This.ThumbWindows.DeleteProp(hwnd)
     }
 
-    ; if ShiftThumbsForLoginScreen enabled we try to shift thumbnail using user settings
-    ShiftThumbs(Win_Hwnd) {
-        if !This.ShiftThumbsForLoginScreen || This.skipShiftThumbs
+    ; Both shifting options share direction, spacing, collision checks and monitor bounds.
+    ShiftThumbs(Win_Hwnd, loggedInCharacter := false) {
+        enabled := loggedInCharacter ? This.ShiftThumbsForLoggedInCharacters : This.ShiftThumbsForLoginScreen
+        if !enabled || This.skipShiftThumbs
             return
 
-        static nextPosX := This.ThumbnailStartLocation["x"]
-        static nextPosY := This.ThumbnailStartLocation["y"]
+        static nextPosX := "", nextPosY := ""
         step_x := This.ShiftThumbHorizontalStep
         step_y := This.ShiftThumbVerticalStep
 
@@ -1523,26 +1666,33 @@ Class Main_Class extends ThumbWindow {
             step_y := This.ThumbnailStartLocation["height"]
         
         switch This.ShiftThumbsDirection {
-            case 2 || 7:
+            case 2, 7:
                 step_y := -step_y
-            case 3 || 6:
+            case 3, 6:
                 step_x := -step_x
-            case 4 || 8:
+            case 4, 8:
                 step_x := -step_x
                 step_y := -step_y
         }
 
+        ; Bounds of the monitor holding the start location (may have negative coords)
+        This.GetMonitorBounds(This.ThumbnailStartLocation["x"], This.ThumbnailStartLocation["y"], &monL, &monT, &monR, &monB)
+
+        ; Clamp the start location so the first thumbnail fits fully on that monitor
+        startX := Max(monL, Min(Integer(This.ThumbnailStartLocation["x"]), monR - Integer(This.ThumbnailStartLocation["width"])))
+        startY := Max(monT, Min(Integer(This.ThumbnailStartLocation["y"]), monB - Integer(This.ThumbnailStartLocation["height"])))
+
         ; if ShiftThumbsCollisionCheck enabled checks position of all thumbnails and tries to avoid collision
         ; if we have collision check enabled we can reset nextPos so we start checking from beginning
         if This.ShiftThumbsCollisionCheck {
-            nextPosX := This.ThumbnailStartLocation["x"]
-            nextPosY := This.ThumbnailStartLocation["y"]
+            nextPosX := startX
+            nextPosY := startY
             Collision := This.CheckCollisions(nextPosX, nextPosY, This.ThumbnailStartLocation["width"], This.ThumbnailStartLocation["height"], This.ThumbWindows.%Win_Hwnd%["Window"].Hwnd)
         }
-        ; if all login windows are closed we reset the position to start from beginning
-        else if This.allLoginClosed {
-            nextPosX := This.ThumbnailStartLocation["x"]
-            nextPosY := This.ThumbnailStartLocation["y"]
+        ; Reset after all clients close (or all login screens close when only their shifting is enabled).
+        else if This.allLoginClosed || nextPosX = "" {
+            nextPosX := startX
+            nextPosY := startY
             This.allLoginClosed := false
             Collision := 0
         }
@@ -1553,13 +1703,13 @@ Class Main_Class extends ThumbWindow {
             ; Horizontal -> Vertical
             if This.ShiftThumbsDirection <= 4 {
                 nextPosX += step_x
-                if nextPosX + This.ThumbnailStartLocation["width"] > A_ScreenWidth || nextPosX < 0 {
-                    nextPosX := This.ThumbnailStartLocation["x"]
+                if nextPosX + This.ThumbnailStartLocation["width"] > monR || nextPosX < monL {
+                    nextPosX := startX
                     nextPosY += step_y
                     ; if end of screen reached, return to the default position
-                    if nextPosY + This.ThumbnailStartLocation["height"] > A_ScreenHeight || nextPosY < 0 {
-                        nextPosX := This.ThumbnailStartLocation["x"]
-                        nextPosY := This.ThumbnailStartLocation["y"]
+                    if nextPosY + This.ThumbnailStartLocation["height"] > monB || nextPosY < monT {
+                        nextPosX := startX
+                        nextPosY := startY
                         MsgBox("Thumbnail shifting reached end of screen! Returning to default position. Try change thumbnail default position, size, shift direction or step.")
                         This.skipShiftThumbs := true
                         break
@@ -1569,13 +1719,13 @@ Class Main_Class extends ThumbWindow {
             ; Vertical -> Horizontal
             else {
                 nextPosY += step_y
-                if nextPosY + This.ThumbnailStartLocation["height"] > A_ScreenHeight || nextPosY < 0 {
-                    nextPosY := This.ThumbnailStartLocation["y"]
+                if nextPosY + This.ThumbnailStartLocation["height"] > monB || nextPosY < monT {
+                    nextPosY := startY
                     nextPosX += step_x
                     ; if end of screen reached, return to the default position
-                    if nextPosX + This.ThumbnailStartLocation["width"] > A_ScreenWidth || nextPosX < 0 {
-                        nextPosX := This.ThumbnailStartLocation["x"]
-                        nextPosY := This.ThumbnailStartLocation["y"]
+                    if nextPosX + This.ThumbnailStartLocation["width"] > monR || nextPosX < monL {
+                        nextPosX := startX
+                        nextPosY := startY
                         MsgBox("Thumbnail shifting reached end of screen! Returning to default position. Try change thumbnail default position, size, shift direction or step.")
                         This.skipShiftThumbs := true
                         break
@@ -1592,6 +1742,22 @@ Class Main_Class extends ThumbWindow {
                         This.ThumbnailStartLocation["height"],
                         This.ThumbWindows.%Win_Hwnd%)
 
+    }
+
+    ; Returns the bounds of the monitor containing (x, y), or the nearest one if the point is off every monitor
+    GetMonitorBounds(x, y, &left, &top, &right, &bottom) {
+        x := Integer(x), y := Integer(y)
+        bestDist := ""
+        Loop MonitorGetCount() {
+            MonitorGet(A_Index, &l, &t, &r, &b)
+            dx := x < l ? l - x : (x >= r ? x - r + 1 : 0)
+            dy := y < t ? t - y : (y >= b ? y - b + 1 : 0)
+            dist := dx * dx + dy * dy
+            if (bestDist = "" || dist < bestDist) {
+                bestDist := dist
+                left := l, top := t, right := r, bottom := b
+            }
+        }
     }
 
     ; Checks collisions for the new thumbnail position
@@ -1669,9 +1835,15 @@ Class Main_Class extends ThumbWindow {
             hwnd := WinExist(title " Ahk_exe exefile.exe")
         }
         if !IsSet(hwnd) || !hwnd {
-            This.debugToolTipText .= "ActivateEVEWindow: hwnd not found for " title "`n"
+            This.debugToolTipText .= "ActivateEVEWindow: hwnd not found for " (title ?? "") "`n"
             SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
             return
+        }
+        ; called with a raw EVE hwnd: look the title up for the position checks below
+        if !IsSet(title) {
+            try title := WinGetTitle("Ahk_id " hwnd)
+            catch
+                title := ""
         }
         ; return when the user tries to bring a window to foreground which is already in foreground 
         if (WinActive("Ahk_id " hwnd)) {
@@ -1685,7 +1857,7 @@ Class Main_Class extends ThumbWindow {
         ProgramLog.Add("Activation requested; target=" hwnd "; source=" This.pendingEVEActivation.source)
 
         If (DllCall("IsIconic", "UInt", hwnd)) {
-            if This.AlwaysMaximize || (This.TrackClientPossitions && This.ClientPossitions.Has(title) && This.ClientPossitions[title]["IsMaximized"]) {
+            if This.AlwaysMaximize || This.ClientSavedMaximized(title) {
                 ; Maximize
                 This.ShowWindowAsync(hwnd, 3)
             }
@@ -1717,6 +1889,14 @@ Class Main_Class extends ThumbWindow {
         return true ; Activation requested; foreground focus may still be pending.
     }
 
+    ; True if client position tracking is on and the client was saved as maximized
+    ClientSavedMaximized(title) {
+        if !This.TrackClientPossitions || title = ""
+            return false
+        pos := This.ClientPossitions[title]
+        return pos && pos.Get("IsMaximized", 0)
+    }
+
     ;The function for the Internal Hotkey to bring a not minimized window in foreground 
     ActivateForgroundWindow(*) {
         ; 2 attempts for brining the window in foreground 
@@ -1726,7 +1906,7 @@ Class Main_Class extends ThumbWindow {
             }
 
                 ;If the user has selected to always maximize. this prevents wrong sized windows on heavy load.
-            if (This.AlwaysMaximize && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0) || ( This.TrackClientPossitions && This.ClientPossitions[WinGetTitle("Ahk_id " This.ActivateHwnd)]["IsMaximized"] && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0 )
+            if (This.AlwaysMaximize || This.ClientSavedMaximized(WinGetTitle("Ahk_id " This.ActivateHwnd))) && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0
                 This.ShowWindowAsync(This.ActivateHwnd, 3)
         }       
         This._ObserveEVEActivation(This._GetForegroundHwnd())
@@ -1776,6 +1956,7 @@ Class Main_Class extends ThumbWindow {
                 continue
             WinMove(x, y, Width, Height, Obj.Hwnd)
         }
+        This.LayoutThumbnailBorders(GuiObj)
     }
 
     ;Saves the possitions of all Windows and stores
@@ -1902,14 +2083,9 @@ Class Main_Class extends ThumbWindow {
 
             for direction in directions {
                 HotIf ObjBindMethod(This, "AtLeastOneWinExist_", gr)
-                if !This.SwitchLangOnErr {
-                    try
-                        Hotkey(directions[direction], ObjBindMethod(This, "CycleNonEVEGroups", index, direction), "P1")
-                    catch ValueError as e
-                        MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " Non-EVE Hotkey Groups")
-                }
-                else
-                    This.RegisterHotkeyWithLanguageRetry(directions[direction], ObjBindMethod(This, "CycleNonEVEGroups", index, direction), "P1", "Non-EVE hotkey group " direction)
+                try This.RegisterWindowHotkey(directions[direction], ObjBindMethod(This, "CycleNonEVEGroups", index, direction), "Non-EVE hotkey group " direction)
+                catch ValueError as e
+                    MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " Non-EVE Hotkey Groups")
             }
             index += 1
             directions := Map()
@@ -2009,14 +2185,9 @@ Class Main_Class extends ThumbWindow {
             if !apps["hotkey"].Has(i) || apps["hotkey"][i] = ""
                 continue
             HotIf ObjBindMethod(This, "OnWinExist_", apps["exe"][i], apps["title"][i])
-            if !This.SwitchLangOnErr {
-                try
-                    Hotkey(apps["hotkey"][i], ObjBindMethod(This, "ActivateNonEVE", apps["exe"][i], apps["title"][i]), "P1")
-                catch ValueError as e
-                    MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " - Non-EVE Hotkeys")
-            }
-            else
-                This.RegisterHotkeyWithLanguageRetry(apps["hotkey"][i], ObjBindMethod(This, "ActivateNonEVE", apps["exe"][i], apps["title"][i]), "P1", "Non-EVE application")
+            try This.RegisterWindowHotkey(apps["hotkey"][i], ObjBindMethod(This, "ActivateNonEVE", apps["exe"][i], apps["title"][i]), "Non-EVE application")
+            catch ValueError as e
+                MsgBox(e.Message " --> " e.Extra " <-- in Non-EVE Applications - " This.LastUsedProfile " - Non-EVE Hotkeys")
         }
     }
 
@@ -2150,12 +2321,14 @@ Class Main_Class extends ThumbWindow {
             ProgramLog.Add("Saving settings; profile=" This.LastUsedProfile)
             if FileExist(tempPath)
                 FileDelete(tempPath)
-            FileAppend(JSON.Dump(This._JSON, , "    "), tempPath)
+            serializedSettings := JSON.Dump(This._JSON, , "    ")
+            FileAppend(serializedSettings, tempPath)
             FileMove(tempPath, savePath, 1)
             ProgramLog.Add("Settings saved")
         } finally {
             Critical(previousCritical)
         }
+        This.SettingsSaveCompleted(serializedSettings)
     }
 
     ; Thanks to SKAN
@@ -2330,48 +2503,32 @@ Class Main_Class extends ThumbWindow {
             }
             active[title] := hwnd
         }
-        This.systemLogMonitor.Poll(active)
+        started := A_TickCount
+        try This.systemLogMonitor.Poll(active)
+        finally ProgramLog.SlowOperation("Local chat polling", started)
     }
 
-    getFilesList() {
+    getFilesList(force := false) {
         directory := This.ResolveGameLogsDirectory()
-        if !DirExist(directory)
-            return []
-
-        ; Reuse sorting only when file identities and modification times match.
-        ; A rotation can replace a file without changing the directory count.
-        static fileTimes := Map()
-        static oldFilesList := []
-        static cachedDirectory := ""
-        newFileTimes := Map()
-        changed := directory != cachedDirectory
-
-        files := []
-        Loop Files, directory "\*.*" {
-            files.Push({name: A_LoopFileName, time: A_LoopFileTimeModified})
-            newFileTimes[A_LoopFileName] := A_LoopFileTimeModified
-            if fileTimes.Get(A_LoopFileName, "") != A_LoopFileTimeModified
-                changed := true
+        if !This.HasOwnProp("gameLogDiscovery") || This.gameLogDiscoveryDirectory != directory {
+            This.CloseGameLogDiscovery()
+            This.gameLogDiscoveryDirectory := directory
+            This.gameLogDiscovery := GameLogDiscovery(directory)
+            This.gameLogDiscoveryExit := ObjBindMethod(This, "CloseGameLogDiscovery")
+            OnExit(This.gameLogDiscoveryExit)
         }
-        if !changed && newFileTimes.Count = fileTimes.Count
-            return oldFilesList
-        fileTimes := newFileTimes
-        cachedDirectory := directory
+        return This.gameLogDiscovery.Refresh(force)
+    }
 
-        ; comparator: return <0 if a < b, 0 if equal, >0 if a > b
-        ; for descending (newest first) we invert the usual order
-        comp := (a, b) => (a.time > b.time) ? -1 : (a.time < b.time) ? 1 : 0
-
-        ; in-place quicksort
-        This.QuickSort(files, comp)
-        
-        ; build newline string or process in order
-        fileList := []
-        for file in files {
-            fileList.Push(directory "\" file.name)
+    CloseGameLogDiscovery(*) {
+        if This.HasOwnProp("gameLogDiscovery") {
+            This.gameLogDiscovery.Close()
+            This.DeleteProp("gameLogDiscovery")
         }
-        oldFilesList := fileList
-        return fileList
+        if This.HasOwnProp("gameLogDiscoveryExit") {
+            OnExit(This.gameLogDiscoveryExit, 0)
+            This.DeleteProp("gameLogDiscoveryExit")
+        }
     }
 
     gameLogsMonitoring() {
@@ -2390,7 +2547,7 @@ Class Main_Class extends ThumbWindow {
         This.eventMethods := Map()
 
         This.dpsMonitoringEnabled := This.dpsMonitoring["incomingDPSEnabled"] || This.dpsMonitoring["outgoingDPSEnabled"]
-        This.eventMonitoringEnabled := This.flashBorderEnabled || This.showEventText
+        This.eventMonitoringEnabled := This.flashBorderEnabled || This.showEventText || EventSounds.AnyEnabled(This.monitoredEvents)
         if !This.gameLogsMonitoringEnabled || (!This.eventMonitoringEnabled && !This.dpsMonitoringEnabled)
             return
 
@@ -2514,16 +2671,33 @@ Class Main_Class extends ThumbWindow {
     getCharNameFromFile(fileName) {
         try file := FileOpen(fileName, "r", "UTF-8")
         catch
-            return "" ; A log may be removed between discovery and opening it.
+            return "" ; A log may disappear between discovery and opening it.
         if !file
-            return
-        Loop 3 {
-            line := file.ReadLine()
-            if A_Index = 3
-                charName := Trim(StrReplace(line, "Listener: "))
-        }
-        file.Close()
-        return This.AntiCleanTitle(charName)
+            return ""
+        try return This.ReadGameLogCharacter(file)
+        finally file.Close()
+    }
+
+    ReadGameLogCharacter(file) {
+        try {
+            header := StrSplit(file.Read(4096), "`n", "`r")
+            if header.Length < 4
+                return ""
+            listener := header[3]
+            session := header[4]
+            if !RegExMatch(listener, "^\s*Listener:\s*(.+?)\s*$", &name)
+                || !RegExMatch(session, "i)^\s*Session Started:\s*\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\s*$")
+                return "" ; Keep the previous reader until the new header is ready.
+            return This.AntiCleanTitle(name[1])
+        } catch
+            return ""
+    }
+
+    GameLogFileIdentity(file) {
+        info := Buffer(52, 0)
+        if !DllCall("GetFileInformationByHandle", "Ptr", file.Handle, "Ptr", info)
+            return ""
+        return NumGet(info, 28, "UInt") ":" NumGet(info, 44, "UInt") ":" NumGet(info, 48, "UInt")
     }
 
     IsGameLogCharacterSelected(charName) {
@@ -2538,62 +2712,79 @@ Class Main_Class extends ThumbWindow {
     }
 
     startLogMonitoring(charName, charId) {
-        ; Failed discovery must allow the window watcher to schedule a retry.
         if This.waitingMonitoringChars.Has(charName)
             This.waitingMonitoringChars.Delete(charName)
         if !This.gameLogsMonitoringEnabled || !This.IsGameLogCharacterSelected(charName)
             return
 
-        filesListSorted := This.getFilesList()
-        if !filesListSorted
-            return
-
-        foundFile := 0
-        for fileName in filesListSorted { ; Finding char names in headers
-
-            SplitPath(fileName, &baseName)
-            fileNameData := StrSplit(baseName, "_")
-            if !fileNameData.Has(3) ; in character selection screen
-                continue
-            fileCharId := StrReplace(fileNameData[3], ".txt") ; removing .txt in the end
-
-            if charId != fileCharId {
-                if charId != 0
-                    continue ; A known ID needs no header reads from other characters' logs.
-                fileCharName := This.getCharNameFromFile(fileName)
-                if !fileCharName || fileCharName != charName
+        files := This.getFilesList()
+        discovery := This.gameLogDiscovery
+        foundFile := "", fileCharId := ""
+        if charId {
+            charId := String(charId)
+            if !discovery.byId.Has(charId)
+                return
+            foundFile := discovery.byId[charId].path
+            fileCharId := charId
+        } else {
+            ; At most one header per character ID, never the whole session archive.
+            for path in files {
+                name := discovery.headers.Get(path, "")
+                ; Header names arrive from the worker; no archive-header I/O here.
+                if name != charName
                     continue
+                foundFile := path
+                SplitPath(path, &baseName)
+                RegExMatch(baseName, "_(\d+)\.txt$", &match)
+                fileCharId := match[1]
+                break
             }
-
-            if charId = 0 {
-                This.charsIds[charName] := fileCharId ; adding to config to speedup process
-                SetTimer(This.Save_Settings_Delay_Timer, -200)
-            }
-            
-            foundFile := fileName
-            break
         }
-
-        if !foundFile
+        if foundFile = ""
             return
 
+        replacing := This.monitoredChars.Has(charName)
+        if replacing {
+            old := This.monitoredChars[charName]
+            if old["fileName"] = foundFile && old.Get("discoveryGeneration", 0) = discovery.generation
+                return ; Quiet sessions keep their reader, pending line and DPS state.
+        }
         try file := FileOpen(foundFile, "r", "UTF-8")
         catch
-            return ; Retry discovery if the game replaced the file meanwhile.
+            return
         if !file
             return
-        size := file.Length
-        file.Seek(0, 2) ; Start at EOF; historical combat must not appear as live DPS.
-
-        This.monitoredChars[charName] := Map("fileName", foundFile, "file", file, "size", size, "pending", "", "launchTime", A_TickCount, "fileUpdated", false)
-        if This.dpsMonitoringEnabled
-            This.monitoredChars[charName]["dps"] := DPSMeter(This.dpsMonitoring)
-
-        if This.waitingMonitoringChars.Has(charName)
-            This.waitingMonitoringChars.Delete(charName)
-
-        This.debugToolTipText .= "Started monitoring: " . charName . "`n"
-        SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
+        try {
+            identity := This.GameLogFileIdentity(file)
+            if replacing && old["fileName"] = foundFile && identity != "" && old.Get("identity", "") = identity {
+                old["discoveryGeneration"] := discovery.generation
+                return
+            }
+            if This.ReadGameLogCharacter(file) != charName
+                return ; New/incomplete/mismatched headers must not replace a valid reader.
+            size := file.Length
+            if replacing
+                file.Seek(0) ; Read the new session's first updates on the next poll.
+            else
+                file.Seek(0, 2) ; Skip historical combat only on initial attachment.
+            reader := Map("fileName", foundFile, "file", file, "size", replacing ? 0 : size,
+                "pending", "", "identity", identity, "discoveryGeneration", discovery.generation)
+            if This.dpsMonitoringEnabled
+                reader["dps"] := DPSMeter(This.dpsMonitoring)
+            if replacing
+                old["file"].Close()
+            This.monitoredChars[charName] := reader
+            file := 0 ; Ownership transfers only after successful validation.
+            if This.charsIds.Get(charName, 0) != fileCharId {
+                This.charsIds[charName] := fileCharId
+                SetTimer(This.Save_Settings_Delay_Timer, -200)
+            }
+            This.debugToolTipText .= (replacing ? "Switched monitoring: " : "Started monitoring: ") charName "`n"
+            SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
+        } finally {
+            if IsObject(file)
+                file.Close()
+        }
     }
 
     stopLogMonitoring(charName) {
@@ -2611,8 +2802,21 @@ Class Main_Class extends ThumbWindow {
     }
 
     monitorAllChars() {
-        for charName in This.monitoredChars.Clone()
-            This.monitorChanges(charName)
+        if This.HasOwnProp("gameLogPollBusy") && This.gameLogPollBusy
+            return
+        This.gameLogPollBusy := true
+        started := A_TickCount
+        try {
+            ; Refresh once, then all readers share the same latest-session index.
+            This.getFilesList()
+            for charName in This.monitoredChars.Clone() {
+                This.startLogMonitoring(charName, This.charsIds.Get(charName, 0))
+                This.monitorChanges(charName)
+            }
+        } finally {
+            This.gameLogPollBusy := false
+            ProgramLog.SlowOperation("Game log polling", started)
+        }
     }
 
     monitorChanges(charName, now := 0) {
@@ -2625,16 +2829,12 @@ Class Main_Class extends ThumbWindow {
             return
         }
 
-        tick := A_TickCount
         reader := This.monitoredChars[charName]
         suppressDisplay := (This.supressForFocused || This.HideThumbForActiveWin) && WinActive("ahk_id " hwnd)
         size := This.monitoredChars[charName]["file"].Length
-        if size = This.monitoredChars[charName]["size"] {
+        if size = This.monitoredChars[charName]["size"] && fileObj.AtEOF {
             if reader.Has("dps")
                 This.RefreshCharacterDPS(reader["dps"], hwnd, now, suppressDisplay)
-            if !This.monitoredChars[charName]["fileUpdated"] && tick - This.monitoredChars[charName]["launchTime"] > 30000 { ; if there is no changes for some time, try find new file
-                This.stopLogMonitoring(charName)
-            }
             return
         }
         if size < reader["size"] {
@@ -2644,7 +2844,6 @@ Class Main_Class extends ThumbWindow {
                 reader["dps"] := DPSMeter(This.dpsMonitoring)
         }
         This.monitoredChars[charName]["size"] := size
-        This.monitoredChars[charName]["fileUpdated"] := True
 
         suppressEvents := !This.eventMonitoringEnabled || suppressDisplay
         This.ReadGameLogUpdates(charName, suppressEvents, now, hwnd, suppressDisplay)
@@ -2666,12 +2865,20 @@ Class Main_Class extends ThumbWindow {
         if file.Length - file.Pos > maxBacklog {
             file.Seek(-maxBacklog, 2)
             reader["pending"] := ""
-            file.ReadLine()
+            reader["dropFragment"] := true
             if reader.Has("dps")
                 reader["dps"] := DPSMeter(This.dpsMonitoring)
         }
-        lines := StrSplit(reader.Get("pending", "") reader["file"].Read(), "`n", "`r")
-        reader["pending"] := lines.Length ? lines.Pop() : "" ; Wait for the writer to finish the last line.
+        lines := StrSplit(reader.Get("pending", "") file.Read(16384), "`n", "`r")
+        reader["pending"] := lines.Length ? lines.Pop() : ""
+        if reader.Get("dropFragment", false) && lines.Length {
+            lines.RemoveAt(1)
+            reader["dropFragment"] := false
+        }
+        if StrLen(reader["pending"]) > 8192 {
+            reader["pending"] := ""
+            reader["dropFragment"] := true
+        }
         if reader.Has("dps") {
             if now {
                 for line in lines
@@ -2722,7 +2929,12 @@ Class Main_Class extends ThumbWindow {
     }
 
     handleEventActivation(charName, shooting := 0) {
-        if !This.monitoredChars.Has(charName) || This.HideThumbnails || (This.HideThumbForActiveWin && WinActive(charName " ahk_exe exefile.exe")) || !WinExist(charName " ahk_exe exefile.exe")
+        if !This.monitoredChars.Has(charName)
+            return
+        try hwnd := This.EventSourceWindow(charName)
+        catch
+            return ; The client can close between reading its log and dispatching.
+        if !hwnd || ((This.supressForFocused || This.HideThumbForActiveWin) && This.EventSourceActive(hwnd))
             return
         if !shooting && (This.monitoredChars[charName]["event"] = "" || This.monitoredChars[charName]["event"] = "stoppedShooting")
             return
@@ -2734,8 +2946,6 @@ Class Main_Class extends ThumbWindow {
         else
             event := This.monitoredChars[charName]["event"]
 
-        hwnd := WinGetID(charName " ahk_exe exefile.exe")
-
         exists := This.eventMethods.Has(charName)
         if !This.lastEventPriority && exists 
             return
@@ -2745,7 +2955,8 @@ Class Main_Class extends ThumbWindow {
         This.debugToolTipText .= "handleEventActivation: event " event " triggered for: " charName "`n"
         SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
 
-        if This.flashBorderEnabled { ; Flashing border if enabled
+        This.PlayEventSound(charName, event)
+        if !This.HideThumbnails && This.flashBorderEnabled { ; Flashing border if enabled
             try {
                 This.flashMethod[charName] := Map()
                 This.flashMethod[charName]["isOn"] := false
@@ -2755,11 +2966,35 @@ Class Main_Class extends ThumbWindow {
                 SetTimer(This.flashMethod[charName]["flashMethod"], This.flashBorderInterval)
             }
         }
-        if This.showEventText {
+        if !This.HideThumbnails && This.showEventText {
             This.updateThumbnailEventText(This.monitoredEventsTexts[event], hwnd)
         }
         This.eventMethods[charName] := ObjBindMethod(This, "endEvent", charName, hwnd)
         SetTimer(This.eventMethods[charName], -This.eventDisplayDuration)
+    }
+
+    PlayEventSound(charName, event, now := 0) {
+        path := This.monitoredEvents[event].Get("sound", "")
+        if path = ""
+            return
+        volume := EventSounds.EffectiveVolume(This._JSON, path, This.monitoredEvents[event])
+        if !volume
+            return
+        This.PlayEventSoundFile(path, volume, event, now)
+    }
+
+    CreateEventSoundMixer() => EventSoundMixer(This._JSON)
+
+    PlayEventSoundFile(path, volume := 100, event := "", now := 0) {
+        if !This.HasOwnProp("eventSoundMixer")
+            This.eventSoundMixer := This.CreateEventSoundMixer()
+        This.eventSoundMixer.Configure(This._JSON)
+        if !This.eventSoundMixer.Play(path, volume, event, now) && This.eventSoundMixer.lastError != "" {
+            if !This.HasOwnProp("eventSoundErrorAt") || A_TickCount - This.eventSoundErrorAt >= 60000 {
+                This.eventSoundErrorAt := A_TickCount
+                ProgramLog.Add("Event sound unavailable: " path "; " This.eventSoundMixer.lastError)
+            }
+        }
     }
 
     endEvent(charName, hwnd) {
@@ -2767,15 +3002,20 @@ Class Main_Class extends ThumbWindow {
             return
         SetTimer(This.eventMethods[charName], 0)
         This.eventMethods.Delete(charName)
+        This.HideEventBorder(hwnd)
 
         This.debugToolTipText .= "endEvent: event ended for: " charName "`n"
         SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
 
-        if This.flashBorderEnabled && This.flashMethod.Has(charName) {
+        if This.flashMethod.Has(charName) {
             flashRef := This.flashMethod[charName]["flashMethod"]
             This.flashMethod.Delete(charName)
             SetTimer(flashRef, 0)
-            This.clearBorder(hwnd, charName)
+            thumb := This.getThumb(hwnd)
+            if thumb && This.SeparateEventBorder(thumb) && This.EventSourceActive(hwnd)
+                This.activateBorder(hwnd, charName)
+            else
+                This.clearBorder(hwnd, charName)
             ; This.ThumbWindows.%hwnd%["Border"].Show("Hide")
 
             if This.LastActiveThumbHwnd = hwnd

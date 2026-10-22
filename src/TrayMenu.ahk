@@ -159,18 +159,7 @@ Class TrayMenu extends Settings_Gui {
                 SetTimer(This.Save_Settings_Delay_Timer, -200)
             }
             Else if (This.Profiles.Has(ItemName)) {
-                ; Keep the selection and save together while login timers are active.
-                previousCritical := A_IsCritical
-                Critical
-                try {
-                    SetTimer(This.Save_Settings_Delay_Timer, 0)
-                    ProgramLog.Add("Tray profile switch requested; from=" This.LastUsedProfile "; to=" ItemName)
-                    This.LastUsedProfile := ItemName
-                    This.SaveJsonToFile()
-                } finally {
-                    Critical(previousCritical)
-                }
-                Reload()
+                This.ActivateProfile(ItemName, "Tray")
             }
             Else if (ItemName = "Open") {
                 if WinExist("EVE-X-Preview - Settings") {
@@ -187,6 +176,28 @@ Class TrayMenu extends Settings_Gui {
                     TrayMenu.Uncheck("Suspend Hotkeys")
             }
         }
+    }
+
+    ActivateProfile(profileName, source := "Hotkey", *) {
+        if !This.Profiles.Has(profileName)
+            return false
+        ; Keep selection, save and reload together while login timers are active.
+        previousCritical := A_IsCritical
+        Critical
+        try {
+            SetTimer(This.Save_Settings_Delay_Timer, 0)
+            ProgramLog.Add(source " profile switch requested; from=" This.LastUsedProfile "; to=" profileName)
+            This.LastUsedProfile := profileName
+            This.SaveJsonToFile()
+            This.ReloadForProfile()
+        } finally {
+            Critical(previousCritical)
+        }
+        return true
+    }
+
+    ReloadForProfile() {
+        Reload()
     }
 
     ShowHideThumbnails() {

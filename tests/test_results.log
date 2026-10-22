@@ -35,6 +35,11 @@ PASS: Local logs retry discovery, rotate sessions and buffer partial writes
 PASS: System and event lines stack inside thumbnails
 PASS: System tracking controls fit in Game Logs Monitoring
 PASS: Game and chat directories share automatic detection without saving paths
+PASS: System colors normalize names and stay stable across window order and travel
+PASS: System colors recycle only vacant colors and extend an exhausted palette
+PASS: System coloring toggles immediately and restores each thumbnail's original text color
+PASS: Local logs color ten characters and follow jumps and logout
+PASS: System color setting defaults off, persists per profile and responds to checkbox clicks
 PASS: Reported red incoming hits calculate DPS with damage percentages enabled
 PASS: DPS uses compact whole numbers and omits zero damage percentages
 PASS: DPS sums damage by log time and expires during idle periods
@@ -58,9 +63,25 @@ PASS: Large game logs start at EOF and stalled readers skip old backlogs
 PASS: Incoming DPS is drawn before batched alerts with first and last priority
 PASS: Flashing borders restore the caller's critical state
 PASS: Damage percentages have no marker or unused event row below them
+PASS: Quiet game logs remain attached without restart churn
+PASS: Game log discovery chooses the newest session rather than last write
+PASS: Game log filename notifications follow rotation after updates
+PASS: Incomplete and mismatched replacement headers preserve the active reader
+PASS: Replacing a game log at the same path follows the new file identity
+PASS: Game log discovery releases its watcher and ignores malformed filenames
+PASS: Dragging single and grouped thumbnails preserves offsets and defers timers
+PASS: Dragging restores timers after an error
+PASS: Simultaneous slow log workers leave GUI timers and settings controls responsive
+PASS: Stopping monitoring terminates pending workers and removes job files
+PASS: Worker failures are reported without waiting or opening an error dialog
+PASS: Long Local sessions retain the system without reading their history in the UI
+PASS: Bounded combat reads continue on quiet polls until all pending damage is processed
+PASS: Local matches become available before the background archive scan finishes
+PASS: Changing window order does not restart a pending Local archive scan
 PASS: Updates exclude drafts and pre-releases from stable notifications
 PASS: Update checks complete asynchronously and cache with manual retry
 PASS: Update HTTP errors recover without clearing a known stable update
+PASS: Quick Group cycles in added order or name order
 PASS: Foreground polling recovers from missing and closed windows
 PASS: Group lookup waits only for a relevant pending activation
 PASS: Preview startup waits for stable sources and spaces registrations
@@ -75,5 +96,22 @@ PASS: Fast previews have no startup waits and slow mode persists
 PASS: Fast mode creates all ready previews in one polling pass
 PASS: Runtime diagnostic counters aggregate and reset without per-frame logs
 PASS: Preview lifecycle cleans partial failures and resumes paused registrations
+PASS: Logged DWM failures stop the batch and release all live previews
+PASS: Pause during registration cancels its result and prevents an interrupted resume
+PASS: Composition bursts pause once, defer native cleanup, and retain the About reason
+PASS: A closed source does not trigger a compositor safety pause
+PASS: DWM auto-pause defaults on, persists off, and follows the Other profile
+PASS: Disabled DWM auto-pause retains previews and independent retries
+PASS: Logged-in startup shifts unsaved positions independently and preserves saved positions
+PASS: Logged-in sequential shifting advances across polls with collision avoidance disabled
+PASS: Login shifting remains independent and non-EVE previews stay at their default position
+PASS: Logged-in shifting defaults on for older profiles, persists opt-out and sits beside login shifting
+PASS: Profile save replaces settings with complete selected profile
+PASS: Invalid layout-sensitive hotkey does not abort profile startup
+PASS: Profile activation shortcuts are independent and optional for old settings
+PASS: Profile activation cancels pending save and persists before reload
+PASS: Profile shortcut ignores active and deleted profiles
+PASS: Profile hotkeys bind inactive profiles and skip invalid or equivalent duplicate keys
+PASS: Profile hotkey field fits sidebar and saves edits for the selected profile
 
-Test summary: 77 passed, 0 failed, 77 total.
+Test summary: 115 passed, 0 failed, 115 total.

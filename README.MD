@@ -8,7 +8,13 @@
 
 Before first use, I suggest creating a backup of your settings. The program creates a backup when settings are migrated, but it is still a good idea to make one manually.
 
-I suggest adding `*` at the beginning of every hotkey used for window activation.
+Use **Test Thumbnail** at the bottom of the Settings sidebar to preview the current default position, size and appearance. It refreshes as you edit settings or change profiles and displays sample system, DPS and event overlays only when their features are enabled. Active/inactive borders, assigned group colors and enabled events cycle every second. Character names rotate through configured custom-color characters with their matching aliases and colors, then custom-name characters when no custom-color characters are available; otherwise varied test names demonstrate different text lengths. The test remains visible while Settings is open, even when normal previews are hidden or paused. Click **Close Test Thumbnail** or close Settings to remove it. It does not capture an EVE client or save a thumbnail position.
+
+Each sample change advances the system through **Jita → Dodixie → Amarr → Hek → Tama → Turnur → Ahbazon**, then repeats. Each system has a distinct demo color whenever system text is enabled, including when the live system-color option is off. Incoming/outgoing DPS and damage-type percentages also vary, including mixed and single-type damage. Samples respect enabled directions and percentage display, and remain above configured DPS thresholds. These sample values and system colors belong only to the test thumbnail; live color assignments and saved settings are preserved.
+
+The test thumbnail follows **Thumbnails Interactions**: use your configured move and resize gestures (by default right-drag to move, Ctrl + both mouse buttons to resize, or both buttons to resize all). Move All/Resize All affect the test thumbnail, and resizing respects the configured minimum size. Activate-click still advances the sample; middle-click also cycles without taking over a configured gesture. Group actions preview their border state, minimize shows the inactive state, hide lasts until the next sample, and close removes the test thumbnail. Moving and resizing are temporary and survive appearance edits; changing the default geometry or selected profile returns the test to that default. Cycling pauses during a gesture.
+
+The program automatically adds `*` when registering window-switching hotkeys so they also work with extra modifiers held. Bindings already containing `*` are used as entered. Custom `key & key` combinations already have wildcard behavior and are preserved as entered; saved settings and displayed text are preserved.
 
 I care a lot about performance, so if you disable some features, the program will stop checking for unnecessary things.
 
@@ -105,6 +111,10 @@ Mouse gestures apply to the thumbnail window that is currently hovered.
 ## Hotkey and key syntax
 
 Hotkeys use AutoHotkey v2 syntax.
+Click the small keyboard button beside a hotkey field to record a shortcut inline. The field turns gray and shows a waiting prompt; press and release the shortcut to fill it. For mouse buttons or the wheel, use the gray field itself. In a multiline hotkey list, click the target line before recording. Esc, clicking the recorder button again, or leaving the field for another setting cancels and keeps the existing binding. Manual editing remains available.
+
+An amber **!** indicates another assignment with the same or overlapping binding. Hover over it or click it to see the other assignments. Checks include the selected profile's effective bindings and all profile activation shortcuts. Repeated bindings can cause unpredictable or inconsistent behavior; warnings never block saving or importing settings.
+
 For a detailed reference, see [Hotkey Modifier Symbols](https://www.autohotkey.com/docs/v2/Hotkeys.htm#Symbols) and [List of Keys](https://www.autohotkey.com/docs/v2/KeyList.htm).
 
 A few useful rules:
@@ -124,6 +134,8 @@ The left panel contains the profile selector and profile management buttons:
 * Add profile
 * Rename profile
 * Delete profile
+
+Select a profile and enter its **Profile hotkey** using AutoHotkey syntax (for example, `^!F1` for Ctrl+Alt+F1). Close Settings to apply. Each profile has its own shortcut, independent of settings-group overrides, and all configured profile shortcuts work even when EVE is closed. Pressing one activates that profile through the same save-and-reload action as the tray Profiles menu. Profile shortcuts pause while Settings is focused and follow Suspend Hotkeys. Leave the field empty to remove a shortcut, and use a different key combination for each profile and other action. Copying a profile's settings leaves the new profile's shortcut empty; renaming preserves it.
 
 It also contains buttons for settings groups. When you select a group, the main window shows the settings for that group.
 
@@ -183,6 +195,7 @@ This group controls thumbnail placement, movement, and visibility behavior.
 * Thumbnail Snap Distance (px): snap threshold in pixels.
 * Hide Thumbnail for Active Window: hides the thumbnail of the active client.
 * Shift Thumbnails on Login Screen: offsets new thumbnails from the default position.
+* Shift Logged-In Thumbnails (Unsaved): enabled by default; offsets new thumbnails for already logged-in characters without a saved position, using the same shift direction, steps, collision avoidance and monitor bounds as login-screen thumbnails. Saved positions take priority; this option works independently of login-screen shifting.
 * Enable Thumbnail Collision Avoidance: prevents thumbnails from overlapping while shifting.
 * Thumbnail Shift Direction: stacking direction for new thumbnails.
 * Thumbnail Shift Horizontal Step (px): horizontal shift step; `0` uses thumbnail width.
@@ -198,10 +211,11 @@ This group controls how thumbnails look.
 * Thumbnail Text Color (Hex/RGB): text color.
 * Thumbnail Text Size: text size.
 * Thumbnail Text Font: font used for thumbnail text.
-* Thumbnail Text Margins (px): text padding inside the thumbnail.
+* Thumbnail Text Margins (px): text padding inside the thumbnail. When double borders are enabled, the inner ring's thickness is added automatically on all sides for every text overlay; configured values remain unchanged. Combined and single-border layouts use the configured margins directly.
 * Client Highlight Color (Hex/RGB): border color for the active client.
 * Client Highlight Border Thickness (px): thickness of the active-client border.
 * Show Client Highlight Border: shows or hides the active-client border.
+* Event / Active Border Layout: **Event in, active out** (default) draws independent, adjacent event and active rings at the thumbnail edge. **Active in, event out** swaps their positions. **Combined (existing)** uses the previous single shared border. Event flashes use the client highlight thickness; inactive and group borders retain their configured styling. Existing event enable, focus-suppression and stop-on-switch settings still apply. The test thumbnail previews both rings together and updates immediately; live thumbnails apply layout changes when Settings closes.
 * Thumbnail Opacity (%): thumbnail transparency.
 * Show All Borders: shows borders around every thumbnail.
 * Inactive Client Border Thickness (px): thickness of inactive-client borders.
@@ -230,6 +244,8 @@ This group controls EVE client behavior.
 
 ### Custom Colors
 
+Every color field supports the Windows color picker. Click the colored swatch beside a single color value. For a per-character color list, select the target line and click its picker button. The picker starts with the current color, and Cancel leaves it unchanged. Hex/RGB values can still be entered manually.
+
 Use this group to assign per-character colors.
 
 * Custom Colors Active: enables or disables custom colors.
@@ -240,11 +256,14 @@ Use this group to assign per-character colors.
 
 ### Game Logs Monitoring
 
+Archive discovery runs in hidden background processes, so Settings and thumbnail controls stay available while large folders are scanned. Recent Local sessions are checked first and published as they are found while older headers continue to be checked. Discovery uses filename notifications and periodic fallback checks, keeps quiet sessions attached, and caches Local headers between scans. Long sessions use a background startup lookup and bounded live reads. Standalone builds embed the worker and must use an AutoHotkey v2 `.exe` compiler base (the usual build), which supports alternate embedded scripts.
+
 This feature does not violate the EULA or Terms of Service, but it is neither endorsed nor supported by CCP. Use it at your own risk.
 Performance impact increases with the number of characters tracked at the same time.
 
 * Game Logs Monitoring Enabled: turns combat/event log monitoring on or off.
 * Track Current System (Local Chat): follows Local chat system-change announcements and keeps the current system at the bottom of the thumbnail, with event text above it. Defaults to off and works independently of combat monitoring and focused-window event suppression. It shares the monitoring interval and selected-character filter; the thumbnail text overlay must be enabled to display it.
+* Color System Names by System: gives characters in the same system the same system-name color, with distinct colors for different occupied systems. Requires current-system tracking and defaults to off. Changes apply immediately. Colors remain stable while a system is occupied; unused colors can be recycled during travel, and assignments are remembered for the current application session.
 * Chat Logs (blank = auto): optionally select your Chatlogs folder. Automatic detection checks beside the configured Gamelogs folder, then Documents/logs/Chatlogs and Documents/EVE/logs/Chatlogs. The newest Local session is matched by its Listener header, including when tracking starts after login. Changes apply when settings close.
 * Game Logs (blank = auto): optionally select your Gamelogs folder. Like Chat Logs, a blank field detects the sibling of the other configured log folder, then Documents/logs/Gamelogs and Documents/EVE/logs/Gamelogs. Automatic paths are resolved without filling in either settings field.
 * Monitoring Interval (ms): polling interval.
@@ -262,6 +281,18 @@ Performance impact increases with the number of characters tracked at the same t
 
 Monitored events for Game Logs Monitoring feature.
 Enabling more events reduces performance. The effect becomes larger as more characters are tracked.
+
+Click the **♪** button beside any event's color to open **Event Sounds**. **Browse / Add...** adds a user-provided WAV or MP3 file to the shared **Sound library**. Select a library sound, check its events on the right, then click **Apply assignments**. **Select all** prepares to assign one sound to every event in one operation; **Clear checks** prepares to remove this sound from its events. Existing assignments appear in the Current sound column. Before Apply, an orange notice identifies replacements and the button shows how many other sounds will be replaced. Replacements are allowed. Unchecked events using a different sound are preserved. Assigning sounds does not enable disabled events.
+
+The event opened with **♪** is prechecked when choosing a sound, so a single-event assignment also needs only Apply. Checkmarks show existing assignments to the selected file; changes are saved only on Apply. **Clear opened event** immediately removes that event's assignment. **Test selected** previews the library sound; **Test opened event** previews the opened event's actual assignment. The button changes to **♫** when a sound is assigned, with its file path in the tooltip. Playback depends on Windows media support. The application includes no sound files and starts with an empty library.
+
+The dialog has three **0–300% volume** controls. **Master volume** affects every application sound across profiles. **Sound volume** affects every event using the selected library file across profiles. Select an event row to edit **Event volume**, which affects only that event in the effective Monitored Events profile. Sliders snap to 5% steps; the adjacent editable percentage fields accept exact whole values, with or without a percent sign. Slider and text values stay synchronized. Empty or invalid edits preserve the previous setting and normalize on leaving the field; values outside 0-300 are clamped. The gains multiply: 50% master × 50% sound × 50% event = 12.5% final volume. Defaults are all 100%; setting any level to 0% mutes it. Values above 100% amplify the audio: 300% is three times the original signal level. The three gains still multiply, so setting all three to 300% gives 2700% combined gain. Strong boosts can clip already-loud audio. Audio is decoded in bounded chunks and mixed with native gain; original sound files are not modified. Volume edits save immediately and adjust clips already playing without changing Windows or other applications. Test selected uses master × sound; Test opened event also includes its event volume.
+
+The library is shared across profiles; sound assignments and event volumes follow the effective **Monitored Events** profile override. **Remove saved** removes only the library entry, preserving existing event assignments, the file's volume and the original file. The library stores file paths rather than copies, so keep selected files in a stable location. Missing or unsupported audio is skipped during monitoring and recorded in the program log; use Browse to select a moved file again. Sound assignments, all volume levels and the library are included in the settings JSON; moving that JSON to another PC does not transfer audio files.
+
+**Simultaneous sounds** sets the maximum number of event sounds playing together, from 1 to 16 (default 1). A new alert replaces the oldest playing alert when the limit is reached; alerts are not queued for later. Lowering the limit stops the oldest excess clips immediately. **Repeat timeout (ms)** sets the minimum interval between starts of the same sound file across all events and characters, from 0 to 3600000 ms (default 2000). Set it to 0 to allow immediate repeats, including overlapping instances when there is room. Both controls are shared across profiles, save immediately, and are independent of visual alert duration. Muted, missing or failed sounds do not consume the repeat timeout. Manual Test buttons use a separate preview player and ignore these event limits and timeouts.
+
+Enable **Game Logs Monitoring** and the event's checkbox for audio alerts. Sounds work with **Show Event Text** and **Flash Border** disabled, and while thumbnails are hidden. They respect event priority and focused-window suppression (including hiding the active client's thumbnail). The Settings test thumbnail's automatic samples remain silent; use the sound dialog's Test buttons to preview audio.
 
 General NPC recognition matches full English names from a bundled EVE Ref dataset, ignoring case. Player names containing NPC name fragments no longer match. The faction, officer and capital events retain their separate lists and priority. See [NPC data and refresh instructions](src/data/README.md) for coverage and maintenance.
 
@@ -327,6 +358,7 @@ Choose which entries appear in the tray menu.
 
 ### Other
 
+* Auto-Pause on DWM Failure: enabled by default, including existing profiles. Automatically pauses live previews on DWM failures or Windows composition changes. Applies immediately; turn it off to keep automatic retries. An existing pause still requires manual Resume.
 * Slow Thumbnail Creation: off by default, including existing profiles. Off creates ready previews immediately without startup or spacing delays. On waits three seconds, requires stable source dimensions for 500 ms, and spaces queued previews by 150 ms to reduce startup GPU pressure. Applies immediately to queued previews and controls startup, new clients, and resume after pausing.
 * Switch Language to English on Error: switches the Windows language to English if hotkey assigning error occurs.
 * Update all thumbnails size to default size: use this button to update every thumbnail size to the current default size.
@@ -351,6 +383,8 @@ Each profile can also disable that override, which makes that group unique for t
 
 ### About
 
+Use **Show Changelog** in About to read the full changelog in a resizable window. Markdown headings appear larger and bold, with formatted bullets, inline bold and code. Text wraps and can be selected or copied. It also opens automatically after an update, showing the installed version. Monitoring, hotkeys and Settings remain available while it is open. The changelog is bundled with compiled releases and works offline.
+
 Buttons:
 * Check Updates: click to checks aviable updates.
 * Update to Release: after update checking can use for update/downgrade to latest release version.
@@ -359,17 +393,27 @@ Buttons:
 * Report Bug: opens [GitHub issue](https://github.com/khivus/EVE-X-Preview/issues/new) page.
 * Show Log: shows a snapshot of the current session's program events, even with Debug Mode off.
 * Export Log: saves that event history to a chosen `.log` file.
-* Pause Live Previews / Resume Live Previews: temporarily unregisters live DWM thumbnails and hides their overlays without removing existing hotkeys or group membership. Resume uses the Slow Thumbnail Creation option in Other. Pause is session-only and resets on restart.
+* Pause Live Previews / Resume Live Previews: temporarily unregisters live DWM thumbnails and hides their overlays without removing existing hotkeys or group membership. With Auto-Pause on DWM Failure enabled in Other (the default), DWM failures or a Windows composition change automatically pause previews; About shows the reason. Resume manually after the display is stable, using this button or the pause/resume hotkey. Resume uses the Slow Thumbnail Creation option in Other. Pause is session-only and resets on restart.
 
 Program diagnostics are kept in `ProgramLog.Text` (up to 256 Ki characters) and written every two seconds to `%LOCALAPPDATA%\EVE-X-Preview\Logs\current.log`. The disk log rotates at approximately 1 MiB into `previous.log`. Startup registration attempts are flushed before touching DWM. Errors reaching the script error handler, DWM failures, and logged runtime errors automatically export an `error-*.log` snapshot; snapshots are limited to one per ten seconds and the newest ten files. Logs can contain character/window names and local paths. Nothing is uploaded automatically.
 
-Slow Thumbnail Creation is optional and disabled by default. When enabled, saved client geometry is restored before the stability wait. Both modes require nonzero source dimensions and retry failed sources independently, with increasing delays capped at 30 seconds. Recovery continues until successful or the client closes; Pause then Resume resets the queue. Unchanged geometry and visibility do not cause redundant DWM updates.
+Slow Thumbnail Creation is optional and disabled by default. When enabled, saved client geometry is restored before the stability wait. Both modes require nonzero source dimensions and retry startup failures independently, with increasing delays capped at 30 seconds. Auto-Pause on DWM Failure is enabled by default and applies immediately when changed in Other. When enabled, DWM failures stop the entire queue and require manual Resume; when disabled, failures remain logged and failed registrations retry. Disabling this setting does not resume already paused previews. Pause cancels interrupted startup attempts, waits for active DWM calls to return before cleanup, and prevents Resume during those calls. Unchanged geometry and visibility do not cause redundant DWM updates.
 
 Diagnostics also record settings load/save/recovery, activation requests and focus results, Windows display-change notifications, and ten-second summaries of DWM geometry/visibility updates and window show commands, with GDI/USER handle counts. These summaries describe the program's operations, not the compositor's frame rate or GPU utilization; display notifications alone do not confirm a driver reset.
 
 Update logs include automatic/manual checks, cache/duplicate skips, HTTP results, selected versions, timeouts, download results, cancellation, and handoff to the updater. The standalone updater writes replacement and relaunch steps to `%LOCALAPPDATA%\EVE-X-Preview\Logs\Updater`. This requires rebuilding and shipping the updated updater executable with the release; older published updater binaries will not contain the new logging.
 
 These measures reduce startup bursts, including restarting Preview while clients are launching. They cannot guarantee recovery from a graphics-driver or DWM crash: those may never raise a script error. Preserve `current.log`/`previous.log` and collect Windows Event Viewer or Reliability Monitor details for the same time when reporting a blackout.
+
+## Contributing
+
+Contributions are welcome. All pull requests must target the [`dev` branch](https://github.com/khivus/EVE-X-Preview/tree/dev).
+
+1. Fork the repository and use the latest upstream `dev` as the starting point whenever possible. If you already have a fork, sync its `dev` branch with this repository before starting.
+2. Create a separate branch for your changes from the updated `dev` branch.
+3. Keep changes focused, test the affected behavior, and describe what changed and how you tested it in the pull request.
+4. Before submitting, update your branch with the latest upstream `dev` whenever possible and resolve any conflicts.
+5. Open the pull request against `khivus/EVE-X-Preview` with **base: `dev`**.
 
 ### EVE-X-Preview
 

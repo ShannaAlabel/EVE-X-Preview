@@ -7,14 +7,33 @@ class ProgramLog {
     static LastErrorTick := -60000
     static Busy := false
     static MaxChars := 262144
+    static MemoryCooldownMs := 30000
+    static MemoryRetryAt := 0
+    static MemoryNoticePending := false
     static Activity := Map()
+    static SlowOperationAt := Map()
     static ActivityAt := A_TickCount
+    static DisplayNotificationAt := Map()
 
     static Count(event) {
+        if this.IsMemoryBackoff()
+            return
         this.Activity[event] := this.Activity.Get(event, 0) + 1
     }
 
+    static SlowOperation(name, started) {
+        if this.IsMemoryBackoff()
+            return
+        elapsed := A_TickCount - started
+        if elapsed < 100 || A_TickCount - this.SlowOperationAt.Get(name, -10000) < 10000
+            return
+        this.SlowOperationAt[name] := A_TickCount
+        this.Add("Slow operation: " name "; elapsed=" elapsed "ms", "WARN")
+    }
+
     static ReportActivity(now := A_TickCount) {
+        if this.IsMemoryBackoff()
+            return
         if now - this.ActivityAt < 10000
             return
         elapsed := now - this.ActivityAt
@@ -33,6 +52,15 @@ class ProgramLog {
     }
 
     static DisplayChanged(wParam, lParam, msg, hwnd) {
+        if this.IsMemoryBackoff()
+            return
+        ; Broadcasts reach each preview/overlay. Log the burst once, not per HWND.
+        notification := msg ":" wParam ":" lParam
+        if A_TickCount - this.DisplayNotificationAt.Get(notification, -1000) < 1000
+            return
+        if this.DisplayNotificationAt.Count >= 64
+            this.DisplayNotificationAt.Clear()
+        this.DisplayNotificationAt[notification] := A_TickCount
         this.Add("Windows display notification=" Format("0x{:X}", msg) "; bpp=" wParam
             "; size=" (lParam & 0xFFFF) "x" ((lParam >> 16) & 0xFFFF), "WARN")
         this.Flush()
@@ -54,52 +82,122 @@ class ProgramLog {
     }
 
     static Add(message, level := "INFO") {
-        message := Trim(message, "`r`n ")
-        if message = ""
+        if this.IsMemoryBackoff()
             return
-        line := FormatTime(, "yyyy-MM-dd HH:mm:ss") " +" A_TickCount " [" level "] " message "`r`n"
-        this.Text := SubStr(this.Text line, -this.MaxChars)
-        this.Pending := SubStr(this.Pending line, -this.MaxChars)
+        try {
+            message := Trim(SubStr(message, -this.MaxChars), "`r`n ")
+            if message = ""
+                return
+            if this.MemoryNoticePending {
+                notice := "[WARN] Out of memory: diagnostic buffers were discarded; logging resumed after a 30-second pause.`r`n"
+                this.Text := this.AppendTail(this.Text, notice)
+                this.Pending := this.AppendTail(this.Pending, notice)
+                this.MemoryNoticePending := false
+            }
+            line := FormatTime(, "yyyy-MM-dd HH:mm:ss") " +" A_TickCount " [" level "] " message "`r`n"
+            this.Text := this.AppendTail(this.Text, line)
+            this.Pending := this.AppendTail(this.Pending, line)
+        } catch MemoryError {
+            this.RecoverMemory()
+        }
+    }
+
+    static AppendTail(buffer, addition) {
+        ; Trim before concatenating, so even temporary joins stay within the cap.
+        addition := SubStr(addition, -this.MaxChars)
+        remaining := this.MaxChars - StrLen(addition)
+        return (remaining > 0 ? SubStr(buffer, -remaining) : "") addition
+    }
+
+    static IsMemoryBackoff() => A_TickCount < this.MemoryRetryAt
+
+    static RecoverMemory() {
+        ; No stack formatting, exports, GUI or recursive logging while exhausted.
+        this.MemoryRetryAt := A_TickCount + this.MemoryCooldownMs
+        this.MemoryNoticePending := true
+        this.Text := ""
+        this.Pending := ""
+        this.Activity.Clear()
+        this.SlowOperationAt.Clear()
+        this.DisplayNotificationAt.Clear()
     }
 
     static Flush(*) {
-        this.ReportActivity()
-        if this.Directory = "" || this.Pending = "" || this.Busy
+        if this.IsMemoryBackoff() || this.Busy
             return
         this.Busy := true
+        started := A_TickCount
         try {
+            this.ReportActivity()
+            if this.IsMemoryBackoff() || this.Directory = "" || this.Pending = ""
+                return
             path := this.Directory "\current.log"
             if FileExist(path) && FileGetSize(path) > 1048576
                 FileMove(path, this.Directory "\previous.log", 1)
             batch := this.Pending
             this.Pending := ""
-            try FileAppend(batch, path, "UTF-8")
-            catch {
-                this.Pending := SubStr(batch this.Pending, -this.MaxChars)
+            try this.WriteBatch(batch, path)
+            catch MemoryError as err {
+                throw err
             }
+            catch {
+                this.Pending := this.AppendTail(batch, this.Pending)
+            }
+        } catch MemoryError {
+            this.RecoverMemory()
         } catch {
             ; Diagnostics must never recursively fail the application.
         } finally {
             this.Busy := false
+            try this.SlowOperation("Diagnostic log flush", started)
+            catch MemoryError {
+                this.RecoverMemory()
+            }
         }
     }
 
+    static WriteBatch(batch, path) => FileAppend(batch, path, "UTF-8")
+
     static Error(err, context := "Unhandled error") {
-        details := context
-        try details .= ": " err.Message "`n" err.File ":" err.Line " " err.What "`n" err.Stack
-        this.Add(details, "ERROR")
-        this.Flush()
-        ; Preserve every error in current.log, but avoid exporting a file storm.
-        if this.Directory != "" && A_TickCount - this.LastErrorTick >= 10000 {
-            this.LastErrorTick := A_TickCount
-            try this.LastErrorExport := this.Export(this.Directory "\error-" A_Now "-" A_TickCount ".log")
-            ; Keep at most ten automatic error snapshots.
-            files := ""
-            loop files this.Directory "\error-*.log"
-                files .= A_LoopFileName "`n"
-            names := StrSplit(Trim(Sort(files), "`n"), "`n")
-            loop Max(0, names.Length - 10)
-                try FileDelete(this.Directory "\" names[A_Index])
+        if err is MemoryError {
+            this.RecoverMemory()
+            return
+        }
+        if this.IsMemoryBackoff()
+            return
+        try {
+            details := context
+            try details .= ": " err.Message "`n" err.File ":" err.Line " " err.What "`n" err.Stack
+            catch MemoryError as memoryFailure {
+                throw memoryFailure
+            }
+            catch {
+            }
+            this.Add(details, "ERROR")
+            if this.IsMemoryBackoff()
+                return
+            this.Flush()
+            if this.IsMemoryBackoff()
+                return
+            ; Preserve every error in current.log, but avoid exporting a file storm.
+            if this.Directory != "" && A_TickCount - this.LastErrorTick >= 10000 {
+                this.LastErrorTick := A_TickCount
+                try this.LastErrorExport := this.Export(this.Directory "\error-" A_Now "-" A_TickCount ".log")
+                catch MemoryError as memoryFailure {
+                    throw memoryFailure
+                }
+                catch {
+                }
+                ; Keep at most ten automatic error snapshots.
+                files := ""
+                loop files this.Directory "\error-*.log"
+                    files .= A_LoopFileName "`n"
+                names := StrSplit(Trim(Sort(files), "`n"), "`n")
+                loop Max(0, names.Length - 10)
+                    try FileDelete(this.Directory "\" names[A_Index])
+            }
+        } catch MemoryError {
+            this.RecoverMemory()
         }
     }
 
