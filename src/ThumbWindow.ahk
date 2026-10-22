@@ -199,6 +199,22 @@ Class ThumbWindow extends Propertys {
         This.EnsureLivePreviewActive(generation)
     }
 
+    ; Queue readiness estimate only: minimized windows report a 0x0 client area.
+    ; Their normal placement permits startup, but must never crop DWM's last frame.
+    PreviewSourceSize(hwnd, &w, &h) {
+        WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
+        if (w > 0 && h > 0) || !DllCall("IsIconic", "Ptr", hwnd)
+            return
+        wp := Buffer(44, 0)
+        NumPut("UInt", 44, wp)
+        if !DllCall("GetWindowPlacement", "Ptr", hwnd, "Ptr", wp)
+            return
+        frame := Buffer(16, 0)
+        DllCall("AdjustWindowRectEx", "Ptr", frame, "UInt", WinGetStyle("ahk_id " hwnd), "Int", false, "UInt", WinGetExStyle("ahk_id " hwnd))
+        w := (NumGet(wp, 36, "Int") - NumGet(wp, 28, "Int")) - (NumGet(frame, 8, "Int") - NumGet(frame, 0, "Int"))
+        h := (NumGet(wp, 40, "Int") - NumGet(wp, 32, "Int")) - (NumGet(frame, 12, "Int") - NumGet(frame, 4, "Int"))
+    }
+
     CreateLiveThumbnail(hwnd, destination) {
         return LiveThumb(hwnd, destination, This)
     }
@@ -210,13 +226,15 @@ Class ThumbWindow extends Propertys {
         if thumb.Has("Thumbnail")
             This.ApplyThumbnailShadow(thumb["Window"].Hwnd, generation)
         WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
-        if w <= 0 || h <= 0
+        if (w <= 0 || h <= 0) && !DllCall("IsIconic", "Ptr", hwnd)
             throw Error("Preview source has no drawable client area",, hwnd)
         WinGetPos(,, &tw, &th, thumb["Window"].Hwnd)
         live := This.CreateLiveThumbnail(hwnd, thumb["Window"].Hwnd)
         try {
             This.EnsureLivePreviewActive(generation)
-            live.Source := [0, 0, w, h]
+            ; DWM defaults to the full source. A minimized client reports 0x0,
+            ; and its normal placement can be much smaller than its last frame.
+            ; Leave the crop unset so maximized and borderless clients stay whole.
             live.Destination := [0, 0, tw, th]
             live.SourceClientAreaOnly := true
             live.Visible := true
@@ -428,10 +446,12 @@ Class ThumbWindow extends Propertys {
             overlay := thumb["TextOverlay"]
             padding := separate ? Max(0, Round(This.EventActiveBorderMode = 1 ? eventWidth : border.BorderThickness)) : 0
             previous := overlay.HasOwnProp("BorderTextPadding") ? overlay.BorderTextPadding : 0
-            if previous != padding {
-                overlay.BorderTextPadding := padding
-                This.RefreshThumbnailTextLayout(overlay)
-            }
+            overlay.BorderTextPadding := padding
+            ; Hidden overlays get no Size event, so follow the actual client size here.
+            overlay.GetClientPos(,, &textW, &textH)
+            if previous != padding || !overlay.HasOwnProp("TextLayoutWidth")
+                || overlay.TextLayoutWidth != textW || overlay.TextLayoutHeight != textH
+                This.LayoutThumbnailText(overlay, 0, textW, textH)
         }
         return size
     }
@@ -712,6 +732,14 @@ Class ThumbWindow extends Propertys {
         ProgramLog.Count(visible ? "preview-shows" : "preview-hides")
     }
 
+    ; A recreated preview can end up above its own overlays after a relog, hiding
+    ; the name and system. Re-inserting the owner below its overlay makes Windows
+    ; restack every owned layer above it without lifting it over other apps.
+    RestackThumbnail(thumb) {
+        DllCall("SetWindowPos", "Ptr", thumb["Window"].Hwnd, "Ptr", thumb["TextOverlay"].Hwnd
+            , "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13) ; SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+    }
+
     ShowHideAllThumbnails(ShowOrHide) {
         for EvEHwnd, ThumbObj in This.ThumbWindows.OwnProps() {
             This.ShowThumb(EvEHwnd, ShowOrHide)
@@ -728,10 +756,8 @@ Class ThumbWindow extends Propertys {
                         continue
                     Obj := ThumbObj["Window"]
                     WinGetPos(, , &TWidth, &THeight, Obj.Hwnd)
-                    WinGetClientPos(, , &EWidth, &EHeight, "Ahk_Id " EvEHwnd)
-                    if EWidth <= 0 || EHeight <= 0 || TWidth <= 0 || THeight <= 0
+                    if TWidth <= 0 || THeight <= 0
                         continue
-                    ThumbObj["Thumbnail"].Source      := [0, 0, EWidth, EHeight]
                     ThumbObj["Thumbnail"].Destination := [0, 0, TWidth, THeight]
                     ThumbObj["Thumbnail"].Update()
                 }
@@ -742,11 +768,9 @@ Class ThumbWindow extends Propertys {
                     if !WinExist("Ahk_Id " eveHwnd)  ; ← guard before any Win* calls
                         return
                     WinGetPos(, , &TWidth, &THeight, ThumbHwnd)
-                    WinGetClientPos(, , &EWidth, &EHeight, "Ahk_Id " eveHwnd)
-                    if EWidth <= 0 || EHeight <= 0 || TWidth <= 0 || THeight <= 0
+                    if TWidth <= 0 || THeight <= 0
                         return
                     ThumbObj := This.ThumbWindows.%eveHwnd%
-                    ThumbObj["Thumbnail"].Source := [0, 0, EWidth, EHeight]
                     ThumbObj["Thumbnail"].Destination := [0, 0, TWidth, THeight]
                     ThumbObj["Thumbnail"].Update()
                 }

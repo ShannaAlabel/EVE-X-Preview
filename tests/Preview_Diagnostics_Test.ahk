@@ -607,6 +607,7 @@ DwmFaultStopsBatchTest() {
     baseline := LiveThumb.OBJ_COUNTER
     for fault in ["shadow", "registration", "update"] {
         app := DwmFaultFixture()
+        app.AutoPauseOnDwmFailure := 1 ; Off by default since v1.6.1.5.
         app.SlowThumbnailCreation := false
         app.previewQueue := PreviewStartupQueue()
         existing := Gui(), first := Gui(), second := Gui()
@@ -682,6 +683,7 @@ DwmCompositionPauseTest() {
     oldHidden := A_DetectHiddenWindows
     DetectHiddenWindows(true)
     app := DwmFaultFixture(), source := Gui()
+    app.AutoPauseOnDwmFailure := 1 ; Off by default since v1.6.1.5.
     app.SlowThumbnailCreation := false
     app.previewQueue := PreviewStartupQueue()
     baseline := LiveThumb.OBJ_COUNTER
@@ -739,27 +741,27 @@ DwmClosedSourceDoesNotPauseTest() {
     }
 }
 
-TestRunner.Register("DWM auto-pause defaults on, persists off, and follows the Other profile", DwmAutoPauseSettingTest)
+TestRunner.Register("DWM auto-pause defaults off, persists on, and follows the Other profile", DwmAutoPauseSettingTest)
 DwmAutoPauseSettingTest() {
     app := DwmFaultFixture()
-    AssertEqual(1, app.AutoPauseOnDwmFailure)
+    AssertEqual(0, app.AutoPauseOnDwmFailure, "New settings disable auto-pause since v1.6.1.5.")
     app._JSON["_Profiles"][app.ProfileOther]["Other"].Delete("AutoPauseOnDwmFailure")
-    AssertEqual(1, app.AutoPauseOnDwmFailure, "Older profiles enable the protection.")
-    app.AutoPauseOnDwmFailure := 0
+    AssertEqual(0, app.AutoPauseOnDwmFailure, "Profiles without the setting use the off default.")
+    app.AutoPauseOnDwmFailure := 1
     app._JSON := JsonMergeNoOverwrite(JSON.Load(default_JSON), JSON.Load(JSON.Dump(app._JSON)))
-    AssertEqual(0, app.AutoPauseOnDwmFailure, "Merging defaults must preserve an explicit opt-out.")
+    AssertEqual(1, app.AutoPauseOnDwmFailure, "Merging defaults must preserve an explicit opt-in.")
     previousProfile := app.ProfileOther
     app._JSON["_Profiles"]["DwmSettingTest"] := Map("Other", Map())
     app.ProfileOther := "DwmSettingTest"
-    AssertEqual(1, app.AutoPauseOnDwmFailure)
-    app.ProfileOther := previousProfile
     AssertEqual(0, app.AutoPauseOnDwmFailure)
+    app.ProfileOther := previousProfile
+    AssertEqual(1, app.AutoPauseOnDwmFailure)
     app.SetState()
     app.MainFrame := Gui()
     app.MainFrame.Group := Map()
     try {
         app.Other_Ctrl()
-        AssertEqual(0, app.MainFrame["AutoPauseOnDwmFailure"].Value)
+        AssertEqual(1, app.MainFrame["AutoPauseOnDwmFailure"].Value)
         app.MainFrame["SlowThumbnailCreation"].GetPos(, &slowY, , &slowH)
         app.MainFrame["AutoPauseOnDwmFailure"].GetPos(, &pauseY, , &pauseH)
         app.MainFrame["SwitchLangOnErr"].GetPos(, &languageY)
@@ -812,5 +814,174 @@ DwmAutoPauseDisabledTest() {
         }
     } finally {
         DetectHiddenWindows(oldHidden)
+    }
+}
+
+TestRunner.Register("Minimized sources get previews at their restored size without being restored", MinimizedPreviewSourceTest)
+MinimizedPreviewSourceTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    source := Gui("+Resize", "Minimized preview source")
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        source.Show("NoActivate w320 h200")
+        hwnd := source.Hwnd
+        WinGetClientPos(,, &restoredW, &restoredH, "ahk_id " hwnd)
+        WinMinimize("ahk_id " hwnd)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Source must start minimized.")
+        app.PreviewSourceSize(hwnd, &w, &h)
+        AssertEqual(restoredW, w, "Minimized width must come from the restored placement.")
+        AssertEqual(restoredH, h, "Minimized height must come from the restored placement.")
+        app.QueuePreview(hwnd, "Minimized preview source")
+        app.previewQueue.nextAt := A_TickCount
+        app.previewQueue.items[hwnd].stableAt := A_TickCount - 1000
+        app.ProcessPreviewQueue([hwnd])
+        AssertTrue(app.ThumbWindows.HasProp(hwnd), "Minimized source must create a preview without being restored.")
+        AssertEqual(baseline + 1, LiveThumb.OBJ_COUNTER)
+        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Preview startup must leave the source minimized.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+}
+
+TestRunner.Register("Maximized sources retain their full image when minimized before or after preview startup", MaximizedMinimizedPreviewTest)
+MaximizedMinimizedPreviewTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        for options in ["+Resize", "-Caption +Resize"] {
+            for previewBeforeMinimize in [false, true] {
+                app := PreviewLifecycleFixture()
+                source := Gui(options, "Maximized minimized preview source")
+                try {
+                    source.Show("NoActivate w320 h200")
+                    hwnd := source.Hwnd
+                    WinMaximize("ahk_id " hwnd)
+                    WinGetClientPos(,, &maxW, &maxH, "ahk_id " hwnd)
+                    AssertTrue(maxW > 320 && maxH > 200, "Source must actually be maximized.")
+                    if previewBeforeMinimize
+                        app.EVE_WIN_Created(hwnd, source.Title)
+                    WinMinimize("ahk_id " hwnd)
+                    if !previewBeforeMinimize {
+                        app.QueuePreview(hwnd, source.Title)
+                        app.previewQueue.nextAt := 0
+                        app.previewQueue.items[hwnd].stableAt := A_TickCount - 1000
+                        app.ProcessPreviewQueue([hwnd])
+                    }
+                    AssertTrue(app.ThumbWindows.HasProp(hwnd), "A minimized maximized source must get a preview.")
+                    thumb := app.ThumbWindows.%hwnd%
+                    CheckFullSource(thumb["Thumbnail"], maxW, maxH)
+                    for resizeAll in [false, true] {
+                        width := resizeAll ? 260 : 240, height := resizeAll ? 170 : 150
+                        WinMove(,, width, height, thumb["Window"].Hwnd)
+                        if resizeAll
+                            app.Update_Thumb()
+                        else
+                            app.Update_Thumb(false, thumb["Window"].Hwnd)
+                        AssertEqual([0, 0, width, height], thumb["Thumbnail"].Destination, "Minimized previews must still resize.")
+                        CheckFullSource(thumb["Thumbnail"], maxW, maxH)
+                        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Preview work must leave the source minimized.")
+                    }
+                } finally {
+                    app.DisposePreview(source.Hwnd)
+                    source.Destroy()
+                }
+                AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            }
+        }
+    } finally {
+        DetectHiddenWindows(previousHidden)
+    }
+
+    CheckFullSource(live, width, height) {
+        crop := live.Source
+        AssertTrue((crop[3] = 0 && crop[4] = 0) || (crop[3] >= width && crop[4] >= height),
+            "The maximized image must not be cropped to the smaller normal window rectangle.")
+        AssertEqual(1, live.SourceClientAreaOnly, "The full image must still exclude the window frame.")
+    }
+}
+
+TestRunner.Register("Restacking a covered preview restores its overlays without raising it", PreviewRestackTest)
+PreviewRestackTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    app.HideThumbnailsOnLostFocus := false
+    app.DisabledFromGroupsEnabled := false, app.QuickGroupEnabled := false
+    app.ShowThumbnailsAlwaysOnTop := false ; Always-on-top previews are re-raised by WinSetAlwaysOnTop instead.
+    source := Gui(, "EVE - Restack source")
+    cover := Gui("+ToolWindow -Caption +E0x08000000", "Restack cover")
+    try {
+        source.Show("NoActivate w320 h200")
+        hwnd := source.Hwnd
+        app.EVE_WIN_Created(hwnd, "EVE - Restack source")
+        app.ShowThumb(hwnd, "Show")
+        thumb := app.ThumbWindows.%hwnd%
+        window := thumb["Window"].Hwnd
+        ; Raise only the preview, leaving its owned layers below it as after a relog.
+        DllCall("SetWindowPos", "Ptr", window, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x213)
+        AssertFalse(StackedAbove(thumb["TextOverlay"].Hwnd, window), "Test must reproduce a covered overlay.")
+        ; An unrelated window, such as the active client, then sits above the preview.
+        cover.Show("NoActivate x0 y0 w20 h20")
+        DllCall("SetWindowPos", "Ptr", cover.Hwnd, "Ptr", 0, "Int", 0, "Int", 0, "Int", 0, "Int", 0, "UInt", 0x13)
+        AssertTrue(StackedAbove(cover.Hwnd, window), "Unrelated window must start above the preview.")
+        app.RestackThumbnail(thumb)
+        for key in ["TextOverlay", "Border", "EventBorder"]
+            if thumb.Has(key)
+                AssertTrue(StackedAbove(thumb[key].Hwnd, window), key " must be restacked above its preview.")
+        AssertTrue(StackedAbove(cover.Hwnd, window), "Restacking must not raise the preview over other windows.")
+    } finally {
+        app.CloseLivePreviews("test", 0)
+        app.DisposePreview(source.Hwnd)
+        cover.Destroy()
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
+    }
+
+    StackedAbove(a, b) {
+        h := b
+        while h := DllCall("GetWindow", "Ptr", h, "UInt", 3, "Ptr") ; GW_HWNDPREV
+            if h = a
+                return true
+        return false
+    }
+}
+
+TestRunner.Register("Hidden previews moved to a saved size relayout their text", HiddenPreviewTextLayoutTest)
+HiddenPreviewTextLayoutTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    app := PreviewLifecycleFixture()
+    source := Gui(, "Hidden layout source")
+    thumb := 0
+    try {
+        source.Show("Hide w160 h100")
+        thumb := app.Create_Thumbnail(source.Hwnd, "Hidden layout source")
+        overlay := thumb["TextOverlay"]
+        AssertFalse(DllCall("IsWindowVisible", "Ptr", overlay.Hwnd), "Overlay must still be hidden when moved.")
+        start := Map()
+        for key in ["x", "y", "width", "height"]
+            start[key] := Integer(app.ThumbnailStartLocation[key])
+        for size in [[start["width"] * 2, start["height"] * 2], [Round(start["width"] / 2), Round(start["height"] / 2)]] {
+            app.ThumbMove(start["x"], start["y"], size[1], size[2], thumb)
+            overlay.GetClientPos(,, &w, &h)
+            AssertEqual(w, overlay.TextLayoutWidth, "Layout width must follow the moved overlay.")
+            AssertEqual(h, overlay.TextLayoutHeight, "Layout height must follow the moved overlay.")
+            overlay["OverlayText"].GetPos(&nx,, &nw)
+            AssertTrue(nx + nw <= w, "Name must fit inside the moved overlay.")
+            overlay["EventText"].GetPos(, &ey,, &eh)
+            AssertTrue(ey + eh <= h, "Bottom utility line must stay inside the moved overlay.")
+        }
+    } finally {
+        if thumb
+            for key, obj in thumb
+                try key = "Thumbnail" ? obj.Close() : obj.Destroy()
+        source.Destroy()
+        DetectHiddenWindows(previousHidden)
     }
 }

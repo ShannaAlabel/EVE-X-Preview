@@ -1933,7 +1933,7 @@ Class Settings_Gui extends SoundSettingsGui {
         This.MainFrame["SlowThumbnailCreation"].ToolTip := "Off: create ready previews immediately. On: wait 3 seconds, then stagger previews to reduce startup GPU pressure."
         Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", topSettingsGap), "Auto-Pause on DWM Failure:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vAutoPauseOnDwmFailure Checked" This.AutoPauseOnDwmFailure, "On/Off")
-        This.MainFrame["AutoPauseOnDwmFailure"].ToolTip := "Enabled by default. Pause live previews on DWM errors or Windows composition changes. Resume manually in About or with the pause/resume hotkey. Applies immediately."
+        This.MainFrame["AutoPauseOnDwmFailure"].ToolTip := "Disabled by default. Pause live previews on DWM errors or Windows composition changes. Resume manually in About or with the pause/resume hotkey. Applies immediately."
         Other.Push This.MainFrame.Add("Text", Format("xs ys+{} Section", topSettingsGap), "Switch Language to English on Error:")
         Other.Push This.MainFrame.Add("CheckBox", Format("xp+{} yp", This.offsetX) " vSwitchLangOnErr Checked" This.SwitchLangOnErr, "On/Off")
 

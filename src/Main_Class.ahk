@@ -572,7 +572,9 @@ Class Main_Class extends ThumbWindow {
                         ; Shows the Thumbnail on top of other thumbnails
                         if This.ShowThumbnailsAlwaysOnTop
                             WinSetAlwaysOnTop(1,This.ThumbWindows.%Ahwnd%["Window"].Hwnd )
-                        
+                        else
+                            This.RestackThumbnail(This.ThumbWindows.%Ahwnd%)
+
                         This.ShowActiveBorder(Ahwnd)
                         This.UpdateThumb_AfterActivation(, Ahwnd)
                         This.BorderActive := Ahwnd
@@ -1422,7 +1424,7 @@ Class Main_Class extends ThumbWindow {
         if This.livePreviewsPaused
             return
         try {
-            WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
+            This.PreviewSourceSize(hwnd, &w, &h)
             if !This.previewQueue.items.Has(hwnd)
                 ProgramLog.Add("Preview queued hwnd=" hwnd " title=" title " size=" w "x" h)
             This.previewQueue.Observe(hwnd, title, w, h)
@@ -1459,7 +1461,8 @@ Class Main_Class extends ThumbWindow {
             ProgramLog.Flush()
             item := This.previewQueue.items[hwnd]
             if !This.ThumbWindows.HasProp(hwnd) && This.TrackClientPossitions && This.ClientPossitions[title]
-                && !item.HasOwnProp("positionRestored") {
+                && !item.HasOwnProp("positionRestored") && !DllCall("IsIconic", "Ptr", hwnd) {
+                ; Restoring placement would un-minimize the client, so minimized ones keep their state.
                 This.RestoreClientPossitions(hwnd, title)
                 item.positionRestored := true
                 item.stableAt := A_TickCount
@@ -1832,9 +1835,15 @@ Class Main_Class extends ThumbWindow {
             hwnd := WinExist(title " Ahk_exe exefile.exe")
         }
         if !IsSet(hwnd) || !hwnd {
-            This.debugToolTipText .= "ActivateEVEWindow: hwnd not found for " title "`n"
+            This.debugToolTipText .= "ActivateEVEWindow: hwnd not found for " (title ?? "") "`n"
             SetTimer(This.debugToolTipMethod, This.debugToolTipDelay)
             return
+        }
+        ; called with a raw EVE hwnd: look the title up for the position checks below
+        if !IsSet(title) {
+            try title := WinGetTitle("Ahk_id " hwnd)
+            catch
+                title := ""
         }
         ; return when the user tries to bring a window to foreground which is already in foreground 
         if (WinActive("Ahk_id " hwnd)) {
@@ -1848,7 +1857,7 @@ Class Main_Class extends ThumbWindow {
         ProgramLog.Add("Activation requested; target=" hwnd "; source=" This.pendingEVEActivation.source)
 
         If (DllCall("IsIconic", "UInt", hwnd)) {
-            if This.AlwaysMaximize || (This.TrackClientPossitions && This.ClientPossitions[title] && This.ClientPossitions[title]["IsMaximized"]) {
+            if This.AlwaysMaximize || This.ClientSavedMaximized(title) {
                 ; Maximize
                 This.ShowWindowAsync(hwnd, 3)
             }
@@ -1880,6 +1889,14 @@ Class Main_Class extends ThumbWindow {
         return true ; Activation requested; foreground focus may still be pending.
     }
 
+    ; True if client position tracking is on and the client was saved as maximized
+    ClientSavedMaximized(title) {
+        if !This.TrackClientPossitions || title = ""
+            return false
+        pos := This.ClientPossitions[title]
+        return pos && pos.Get("IsMaximized", 0)
+    }
+
     ;The function for the Internal Hotkey to bring a not minimized window in foreground 
     ActivateForgroundWindow(*) {
         ; 2 attempts for brining the window in foreground 
@@ -1889,7 +1906,7 @@ Class Main_Class extends ThumbWindow {
             }
 
                 ;If the user has selected to always maximize. this prevents wrong sized windows on heavy load.
-            if (This.AlwaysMaximize && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0) || ( This.TrackClientPossitions && This.ClientPossitions[WinGetTitle("Ahk_id " This.ActivateHwnd)]["IsMaximized"] && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0 )
+            if (This.AlwaysMaximize || This.ClientSavedMaximized(WinGetTitle("Ahk_id " This.ActivateHwnd))) && WinGetMinMax("ahk_id " This.ActivateHwnd) = 0
                 This.ShowWindowAsync(This.ActivateHwnd, 3)
         }       
         This._ObserveEVEActivation(This._GetForegroundHwnd())
