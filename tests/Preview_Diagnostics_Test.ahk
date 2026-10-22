@@ -848,6 +848,64 @@ MinimizedPreviewSourceTest() {
     }
 }
 
+TestRunner.Register("Maximized sources retain their full image when minimized before or after preview startup", MaximizedMinimizedPreviewTest)
+MaximizedMinimizedPreviewTest() {
+    previousHidden := A_DetectHiddenWindows
+    DetectHiddenWindows(true)
+    baseline := LiveThumb.OBJ_COUNTER
+    try {
+        for options in ["+Resize", "-Caption +Resize"] {
+            for previewBeforeMinimize in [false, true] {
+                app := PreviewLifecycleFixture()
+                source := Gui(options, "Maximized minimized preview source")
+                try {
+                    source.Show("NoActivate w320 h200")
+                    hwnd := source.Hwnd
+                    WinMaximize("ahk_id " hwnd)
+                    WinGetClientPos(,, &maxW, &maxH, "ahk_id " hwnd)
+                    AssertTrue(maxW > 320 && maxH > 200, "Source must actually be maximized.")
+                    if previewBeforeMinimize
+                        app.EVE_WIN_Created(hwnd, source.Title)
+                    WinMinimize("ahk_id " hwnd)
+                    if !previewBeforeMinimize {
+                        app.QueuePreview(hwnd, source.Title)
+                        app.previewQueue.nextAt := 0
+                        app.previewQueue.items[hwnd].stableAt := A_TickCount - 1000
+                        app.ProcessPreviewQueue([hwnd])
+                    }
+                    AssertTrue(app.ThumbWindows.HasProp(hwnd), "A minimized maximized source must get a preview.")
+                    thumb := app.ThumbWindows.%hwnd%
+                    CheckFullSource(thumb["Thumbnail"], maxW, maxH)
+                    for resizeAll in [false, true] {
+                        width := resizeAll ? 260 : 240, height := resizeAll ? 170 : 150
+                        WinMove(,, width, height, thumb["Window"].Hwnd)
+                        if resizeAll
+                            app.Update_Thumb()
+                        else
+                            app.Update_Thumb(false, thumb["Window"].Hwnd)
+                        AssertEqual([0, 0, width, height], thumb["Thumbnail"].Destination, "Minimized previews must still resize.")
+                        CheckFullSource(thumb["Thumbnail"], maxW, maxH)
+                        AssertTrue(DllCall("IsIconic", "Ptr", hwnd), "Preview work must leave the source minimized.")
+                    }
+                } finally {
+                    app.DisposePreview(source.Hwnd)
+                    source.Destroy()
+                }
+                AssertEqual(baseline, LiveThumb.OBJ_COUNTER)
+            }
+        }
+    } finally {
+        DetectHiddenWindows(previousHidden)
+    }
+
+    CheckFullSource(live, width, height) {
+        crop := live.Source
+        AssertTrue((crop[3] = 0 && crop[4] = 0) || (crop[3] >= width && crop[4] >= height),
+            "The maximized image must not be cropped to the smaller normal window rectangle.")
+        AssertEqual(1, live.SourceClientAreaOnly, "The full image must still exclude the window frame.")
+    }
+}
+
 TestRunner.Register("Restacking a covered preview restores its overlays without raising it", PreviewRestackTest)
 PreviewRestackTest() {
     previousHidden := A_DetectHiddenWindows

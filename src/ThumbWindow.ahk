@@ -199,8 +199,8 @@ Class ThumbWindow extends Propertys {
         This.EnsureLivePreviewActive(generation)
     }
 
-    ; Minimized windows report a 0x0 client area, but DWM keeps their last frame,
-    ; so size the source from the restored placement minus the window frame.
+    ; Queue readiness estimate only: minimized windows report a 0x0 client area.
+    ; Their normal placement permits startup, but must never crop DWM's last frame.
     PreviewSourceSize(hwnd, &w, &h) {
         WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
         if (w > 0 && h > 0) || !DllCall("IsIconic", "Ptr", hwnd)
@@ -225,14 +225,16 @@ Class ThumbWindow extends Propertys {
         ; Retained preview windows need their frame reapplied after composition changes.
         if thumb.Has("Thumbnail")
             This.ApplyThumbnailShadow(thumb["Window"].Hwnd, generation)
-        This.PreviewSourceSize(hwnd, &w, &h)
-        if w <= 0 || h <= 0
+        WinGetClientPos(,, &w, &h, "ahk_id " hwnd)
+        if (w <= 0 || h <= 0) && !DllCall("IsIconic", "Ptr", hwnd)
             throw Error("Preview source has no drawable client area",, hwnd)
         WinGetPos(,, &tw, &th, thumb["Window"].Hwnd)
         live := This.CreateLiveThumbnail(hwnd, thumb["Window"].Hwnd)
         try {
             This.EnsureLivePreviewActive(generation)
-            live.Source := [0, 0, w, h]
+            ; DWM defaults to the full source. A minimized client reports 0x0,
+            ; and its normal placement can be much smaller than its last frame.
+            ; Leave the crop unset so maximized and borderless clients stay whole.
             live.Destination := [0, 0, tw, th]
             live.SourceClientAreaOnly := true
             live.Visible := true
@@ -754,10 +756,8 @@ Class ThumbWindow extends Propertys {
                         continue
                     Obj := ThumbObj["Window"]
                     WinGetPos(, , &TWidth, &THeight, Obj.Hwnd)
-                    This.PreviewSourceSize(EvEHwnd, &EWidth, &EHeight)
-                    if EWidth <= 0 || EHeight <= 0 || TWidth <= 0 || THeight <= 0
+                    if TWidth <= 0 || THeight <= 0
                         continue
-                    ThumbObj["Thumbnail"].Source      := [0, 0, EWidth, EHeight]
                     ThumbObj["Thumbnail"].Destination := [0, 0, TWidth, THeight]
                     ThumbObj["Thumbnail"].Update()
                 }
@@ -768,11 +768,9 @@ Class ThumbWindow extends Propertys {
                     if !WinExist("Ahk_Id " eveHwnd)  ; ← guard before any Win* calls
                         return
                     WinGetPos(, , &TWidth, &THeight, ThumbHwnd)
-                    This.PreviewSourceSize(eveHwnd, &EWidth, &EHeight)
-                    if EWidth <= 0 || EHeight <= 0 || TWidth <= 0 || THeight <= 0
+                    if TWidth <= 0 || THeight <= 0
                         return
                     ThumbObj := This.ThumbWindows.%eveHwnd%
-                    ThumbObj["Thumbnail"].Source := [0, 0, EWidth, EHeight]
                     ThumbObj["Thumbnail"].Destination := [0, 0, TWidth, THeight]
                     ThumbObj["Thumbnail"].Update()
                 }
